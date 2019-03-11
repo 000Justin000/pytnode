@@ -1,4 +1,5 @@
 import os
+import sys
 import signal
 import argparse
 import time
@@ -15,10 +16,12 @@ import torch.optim as optim
 from torchdiffeq import odeint_adjoint as odeint
 
 parser = argparse.ArgumentParser('tnode')
+parser.set_defaults(restart=False)
 parser.add_argument('--niters', type=int, default=100)
-parser.add_argument('--restart', type=bool, default=False)
-parser.add_argument('--paramr', type=str, default='r.pth')
-parser.add_argument('--paramw', type=str, default='w.pth')
+parser.add_argument('--restart', dest='restart', action='store_true')
+parser.add_argument('--paramr', type=str, default='param.pth')
+parser.add_argument('--paramw', type=str, default='param.pth')
+parser.add_argument('--path', type=str, default='figs/')
 args = parser.parse_args()
 
 class TimeSeries:
@@ -58,8 +61,8 @@ class ODEFunc(nn.Module):
         self.q = q
         self.F = nn.Sequential(nn.Linear(p+q, p+q), nn.Softplus())
         self.G = nn.Sequential(nn.Linear(p+q, p+q), nn.Softplus())
-        self.Z = nn.Sequential(nn.Linear(p+q, p),   nn.Tanh())
-        self.L = nn.Sequential(nn.Linear(p+q, p+q), nn.Sigmoid(), nn.Linear(p+q, q), nn.Softplus())
+        self.Z = nn.Sequential(nn.Linear(p+q, p), nn.Tanh())
+        self.L = nn.Sequential(nn.Linear(p+q, q), nn.Softplus())
         self.TS = TS
 
         for net in [self.F, self.G, self.Z, self.L]:
@@ -70,11 +73,13 @@ class ODEFunc(nn.Module):
 
     def forward(self, t, u):
         du = -self.F(u) * u + self.G(u) * torch.cat((self.Z(u), torch.tensor([TS.intensity(t)])), 0)
-        return du - torch.dot(du, u) / torch.dot(u, u) * u
+        dup = du[:self.p] - torch.dot(du[:self.p], u[:self.p]) / torch.dot(u[:self.p], u[:self.p]) * u[:self.p]
+        duq = du[self.p:]
+        return torch.cat((dup, duq))
 
 
 def visualize(tsave, trace, lmbda, envt, itr):
-    fig = plt.figure(figsize=(6, 6), facecolor='white')
+    plt.figure(figsize=(6, 6), facecolor='white')
     axe = plt.gca()
     axe.set_title('Point Process Modeling')
     axe.set_xlabel('time')
@@ -82,13 +87,14 @@ def visualize(tsave, trace, lmbda, envt, itr):
     axe.set_ylim(-3.0, 3.0)
     for dat in list(trace.detach().numpy().T):
         plt.plot(tsave.numpy(), dat, linewidth=0.5)
-    plt.plot(tsave.numpy(), lmbda.detach().numpy(), linewidth=2.0)
+    plt.plot(tsave.numpy(), lmbda.detach().numpy(), linewidth=1.0)
     plt.scatter(envt.numpy(), np.ones(len(envt))*2.0)
-    fig.savefig('figs/{:03d}'.format(itr), dpi=150)
-    # fig.show()
+    plt.savefig(args.path + '{:03d}'.format(itr), dpi=150)
 
 
 if __name__ == '__main__':
+    signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
+
     p, q, dt, sigma, tspan = 5, 1, 0.05, 0.10, (0.0, 300.0)
     dat = tick.dataset.fetch_hawkes_bund_data()
     TS = TimeSeries(sum(dat, [])[0:q])
@@ -100,28 +106,32 @@ if __name__ == '__main__':
         func.load_state_dict(checkpoint['func_state_dict'])
         u0p = checkpoint['u0p']
         u0q = checkpoint['u0q']
+        it0 = checkpoint['it0']
     else:
         u0p = torch.randn(p, requires_grad=True)
         u0q = torch.zeros(q)
+        it0 = 0
 
     grid = torch.arange(tspan[0], tspan[1], dt)
-    envt = torch.tensor([ts[idx][i] for ts in TS.tss for idx in ts for i in range(len(ts[idx])) if tspan[0] < ts[idx][i] < tspan[1]])
+    envt = torch.tensor([ts[idx][i] for ts in TS.tss for idx in ts for i in range(len(ts[idx]))
+                         if tspan[0] < ts[idx][i] < tspan[1]])
     tsave, pos = torch.sort(torch.cat((grid, envt)))
     _, od = torch.sort(pos)
     gridid = od[:len(grid)]
     envtid = od[len(grid):]
 
-    optimizer = optim.Adam(itertools.chain(func.parameters(), [u0p, u0q]), lr=1e-3, weight_decay=1e-4)
+    optimizer = optim.Adam([{'params': func.parameters()},
+                            {'params': u0p, 'lr': 5e-2},
+                            {'params': u0q}
+                            ], lr=1e-3, weight_decay=1e-4)
 
-    try:
-        for i in range(100):
-            optimizer.zero_grad()
-            trace = odeint(func, torch.cat((u0p, u0q)), tsave, method='adams')
-            lmbda = func.L(trace)
-            loss = -((torch.log(lmbda[envtid, 0])).sum() - (lmbda[gridid, 0] * dt).sum())
-            loss.backward()
-            optimizer.step()
-            visualize(tsave, trace, lmbda, envt, i)
-            print(loss)
-    except KeyboardInterrupt:
-        torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q}, args.paramw)
+    for i in range(it0, args.niters):
+        optimizer.zero_grad()
+        trace = odeint(func, torch.cat((u0p, u0q)), tsave, method='adams')
+        lmbda = func.L(trace)
+        loss = -((torch.log(lmbda[envtid, 0])).sum() - (lmbda[gridid, 0] * dt).sum())
+        loss.backward()
+        optimizer.step()
+        visualize(tsave, trace, lmbda, envt, i)
+        torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': i+1}, args.paramw)
+        print("iter: ", i, "    loss: ", loss)
