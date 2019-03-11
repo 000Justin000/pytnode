@@ -84,7 +84,7 @@ def visualize(tsave, trace, lmbda, envt, itr):
     axe.set_title('Point Process Modeling')
     axe.set_xlabel('time')
     axe.set_ylabel('intensity')
-    axe.set_ylim(-3.0, 3.0)
+    axe.set_ylim(-5.0, 5.0)
     for dat in list(trace.detach().numpy().T):
         plt.plot(tsave.numpy(), dat, linewidth=0.5)
     plt.plot(tsave.numpy(), lmbda.detach().numpy(), linewidth=1.0)
@@ -121,7 +121,7 @@ if __name__ == '__main__':
     envtid = od[len(grid):]
 
     optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': u0p, 'lr': 5e-2},
+                            {'params': u0p, 'lr': 1e-2},
                             {'params': u0q}
                             ], lr=1e-3, weight_decay=1e-4)
 
