@@ -124,7 +124,7 @@ if __name__ == '__main__':
                             {'params': u0p, 'lr': 1e-2},
                             {'params': u0q}
                             ], lr=1e-3, weight_decay=1e-4)
-
+a
     for i in range(it0, args.niters):
         optimizer.zero_grad()
         trace = odeint(func, torch.cat((u0p, u0q)), tsave, method='adams')
