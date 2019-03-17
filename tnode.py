@@ -42,7 +42,7 @@ class ODEFunc(nn.Module):
         self.Gh = nn.Sequential(nn.Linear(p+q, q), nn.Softplus())
         self.Z = nn.Sequential(nn.Linear(p+q, p), nn.Tanh())
         self.L = nn.Sequential(nn.Linear(p+q, q), nn.Softplus())
-        self.A = nn.Sequential(nn.Linear(2*q, q), nn.ReLU())
+        self.A = nn.Sequential(nn.Linear(2*q, q), nn.Softplus())
         self.timeseries = [] if jump_type == "simulate" else time_series
         self.backtrace = []
         if graph:
@@ -62,7 +62,7 @@ class ODEFunc(nn.Module):
                     nn.init.constant_(m.bias, val=0)
 
     def forward(self, t, u):
-        print(t)
+        # print(t)
         assert u.shape[0] == self.graph.number_of_nodes()
         c = u[:, :self.p]
         h = u[:, self.p:]
@@ -91,7 +91,8 @@ class ODEFunc(nn.Module):
             dN[rd < lmbda_dt**2/2 + lmbda_dt*torch.exp(-lmbda_dt)] += 1
 
             du[:, self.p:] += self.Gh(u1) * dN
-            for nid, evntid in dN.nonzero():
+            for evnt in dN.nonzero():
+                nid, evntid = evnt
                 for _ in range(dN[nid, evntid].int()):
                     sequence.append((t1, nid, evntid))
             self.timeseries.extend(sequence)
@@ -107,13 +108,12 @@ class ODEFunc(nn.Module):
             if t0 < t1:  # forward
                 idx = bisect.bisect_right(self.timeseries, (t0, sys.maxsize, sys.maxsize))
                 if idx != len(self.timeseries):
-                    t = min(t1, self.timeseries[idx][0])
+                    t = min(t1, torch.tensor(self.timeseries[idx][0], dtype=torch.float64))
             else:  # backward
                 idx = bisect.bisect_left(self.timeseries, (t0, -sys.maxsize, -sys.maxsize))
                 if idx > 0:
-                    t = max(t1, self.timeseries[idx-1][0])
-
-        return torch.tensor(t, dtype=torch.float64)
+                    t = max(t1, torch.tensor(self.timeseries[idx-1][0], dtype=torch.float64))
+        return t
 
     def read_jump(self, t1, u1):
         du = torch.zeros((self.graph.number_of_nodes(), p+q))
@@ -124,8 +124,8 @@ class ODEFunc(nn.Module):
 
             dN = torch.zeros((self.graph.number_of_nodes(), q))
             for evnt in self.timeseries[lid:rid]:
-                t, nid, envtid = evnt
-                dN[nid, envtid] += 1
+                t, nid, evntid = evnt
+                dN[nid, evntid] += 1
 
             du[:, self.p:] += self.Gh(u1) * dN
 
@@ -142,20 +142,21 @@ def read_timeseries(num_vertices=1):
     return sorted(timeseries)
 
 
-def visualize(tsave, trace, tsave_, trace_, lmbda, envt, itr):
+def visualize(tsave, trace, tsave_, trace_, lmbda, evnt_record, itr):
     for i in range(trace.shape[1]):
         plt.figure(figsize=(6, 6), facecolor='white')
         axe = plt.gca()
         axe.set_title('Point Process Modeling')
         axe.set_xlabel('time')
         axe.set_ylabel('intensity')
-        axe.set_ylim(-5.0, 5.0)
+        axe.set_ylim(-10.0, 10.0)
         for dat in list(trace[:, i, :].detach().numpy().T):
             plt.plot(tsave.numpy(), dat, linewidth=0.7)
         for dat in list(trace_[:, i, :].detach().numpy().T):
             plt.plot(tsave_.numpy(), dat, linewidth=0.3, linestyle="dashed", color="black")
         plt.plot(tsave.numpy(), lmbda[:, i, :].detach().numpy(), linewidth=2.0)
-        plt.scatter(envt.numpy(), np.ones(len(envt))*2.0, 3.0)
+        evnt = np.array([record[0] for record in evnt_record if record[1] == i])
+        plt.scatter(evnt, np.ones(len(evnt))*7.0, 2.0)
         plt.savefig(args.path + '{:03d}_{:03d}'.format(i, itr), dpi=150)
 
 
@@ -166,9 +167,9 @@ if __name__ == '__main__':
     G = nx.Graph()
     # G.add_node(0)
     G.add_edge(0, 1)
-    # G.add_edge(1, 2)
+    G.add_edge(1, 2)
 
-    p, q, dt, sigma, tspan = 5, 1, 0.05, 0.10, (50.0, 70.0)
+    p, q, dt, sigma, tspan = 5, 1, 0.05, 0.10, (65.0, 75.0)
     TS = read_timeseries(G.number_of_nodes())
 
     # initialize / load model
@@ -185,13 +186,14 @@ if __name__ == '__main__':
         u0q = torch.zeros(G.number_of_nodes(), q)
         it0 = 0
 
+    evnt_record = [record for record in TS if tspan[0] < record[0] < tspan[1]]
     grid = torch.arange(tspan[0], tspan[1], dt)
-    # envt = torch.tensor([ts[0] for ts in TS if tspan[1] < ts[0] < tspan[1]])
-    envt = torch.tensor([])
-    tsave, pos = torch.sort(torch.cat((grid, envt)))
+    evnt = torch.tensor([record[0] for record in evnt_record])
+    tsave, pos = torch.sort(torch.cat((grid, evnt)))
     _, od = torch.sort(pos)
     gridid = od[:len(grid)]
-    envtid = od[len(grid):]
+    evntid = od[len(grid):]
+    evntid_record = [(idx,) + record[1:] for idx, record in zip(evntid, evnt_record)]
 
     optimizer = optim.Adam([{'params': func.parameters()},
                             {'params': u0p, 'lr': 1e-2},
@@ -202,12 +204,12 @@ if __name__ == '__main__':
         optimizer.zero_grad()
         trace = odeint(func, torch.cat((u0p, u0q), dim=1), tsave, method='jump_adams')
         lmbda = func.L(trace)
-        loss = -((torch.log(lmbda[envtid, :, 0])).sum() - (lmbda[gridid, :, 0] * dt).sum())
+        loss = -(sum([torch.log(lmbda[record]) for record in evntid_record]) - (lmbda[gridid, :, :] * dt).sum())
         func.backtrace = []  # debug
         loss.backward()
         optimizer.step()
         tsave_ = torch.cat(tuple(record[0].reshape((1)) for record in reversed(func.backtrace)))
         trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-        visualize(tsave, trace, tsave_, trace_, lmbda, envt, i)
+        visualize(tsave, trace, tsave_, trace_, lmbda, evnt_record, i)
         torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': i+1}, args.paramw)
         print("iter: ", i, "    loss: ", loss)
