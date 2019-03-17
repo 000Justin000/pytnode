@@ -7,6 +7,7 @@ import random
 import numpy as np
 import functools
 import itertools
+import bisect
 import matplotlib.pyplot as plt
 import tick.dataset
 
@@ -26,48 +27,24 @@ parser.add_argument('--path', type=str, default='figs/')
 args = parser.parse_args()
 
 
-class TimeSeries:
-
-    def __init__(self, series, sigma=0.1, num_vertices=1):
-        self.tmin = min(functools.reduce(lambda x, y: np.concatenate((x, y)), series))
-        self.twd = sigma * 10
-        self.sigma = sigma
-        self.tss = []
-        self.num_vertices = num_vertices
-        for se in series:
-            ts = {}
-            for t in se:
-                idx = int(np.floor((t - self.tmin) / self.twd))
-                if idx not in ts:
-                    ts[idx] = []
-                ts[idx].append(t)
-            self.tss.append(ts)
-
-    def intensity(self, t):
-        assert not torch.isnan(t)
-        if torch.isinf(t): return torch.zeros(len(self.tss))
-
-        vv = torch.zeros(len(self.tss))
-        idx = int(np.floor(t.detach().numpy() - self.tmin) / self.twd)
-        for (i, ts) in enumerate(self.tss):
-            tt = torch.tensor(ts.get(idx-1, []) + ts.get(idx, []) + ts.get(idx+1, []))
-            vv[i] = torch.exp(-0.5 * ((tt - t) / self.sigma)**2 / (self.sigma * np.sqrt(2*np.pi))).sum()
-        return torch.stack([vv] * self.num_vertices)
-
-
 class ODEFunc(nn.Module):
 
-    def __init__(self, p, q, time_series=None, graph=None, aggregate_func=None):
+    def __init__(self, p, q, jump_type="simulate", time_series=None, graph=None, aggregate_func=None):
         super(ODEFunc, self).__init__()
 
+        assert jump_type in ["simulate", "read", "none"], "invalide jump_type, must be one of [simulate, read, none]"
         self.p = p
         self.q = q
-        self.F = nn.Sequential(nn.Linear(p+q, p+q), nn.Softplus())
-        self.G = nn.Sequential(nn.Linear(p+q, p+q), nn.Softplus())
+        self.jump_type = jump_type
+        self.Fc = nn.Sequential(nn.Linear(p+q, p), nn.Softplus())
+        self.Fh = nn.Sequential(nn.Linear(p+q, q), nn.Softplus())
+        self.Gc = nn.Sequential(nn.Linear(p+q, p), nn.Softplus())
+        self.Gh = nn.Sequential(nn.Linear(p+q, q), nn.Softplus())
         self.Z = nn.Sequential(nn.Linear(p+q, p), nn.Tanh())
         self.L = nn.Sequential(nn.Linear(p+q, q), nn.Softplus())
         self.A = nn.Sequential(nn.Linear(2*q, q), nn.ReLU())
-        self.TS = time_series
+        self.timeseries = [] if jump_type == "simulate" else time_series
+        self.backtrace = []
         if graph:
             self.graph = graph
         else:
@@ -78,25 +55,94 @@ class ODEFunc(nn.Module):
         else:
             self.aggregate_func = lambda vnbrs: torch.zeros(self.q) if vnbrs.shape[0] == 0 else vnbrs.mean(dim=0)
 
-        for net in [self.F, self.G, self.Z, self.L, self.A]:
+        for net in [self.Fc, self.Fh, self.Gc, self.Gh, self.Z, self.L, self.A]:
             for m in net.modules():
                 if isinstance(m, nn.Linear):
                     nn.init.normal_(m.weight, mean=0, std=0.1)
                     nn.init.constant_(m.bias, val=0)
 
     def forward(self, t, u):
+        print(t)
         assert u.shape[0] == self.graph.number_of_nodes()
-        output = TS.intensity(t)
-        aggout = torch.stack(tuple(self.A(torch.cat((output[i, :], self.aggregate_func(output[list(self.graph.neighbors(i)), :])))) for i in self.graph.nodes))
-        du = -self.F(u) * u + self.G(u) * torch.cat((self.Z(u), aggout), dim=1)
-        up = u[:, :self.p]
-        dup = du[:, :self.p]
-        duq = du[:, self.p:]
-        dup = dup - (torch.sum(dup*up, dim=1, keepdim=True) / torch.sum(up*up, dim=1, keepdim=True)) * up
-        return torch.cat((dup,  duq), dim=1)
+        c = u[:, :self.p]
+        h = u[:, self.p:]
+        h_ = torch.stack(tuple(self.A(torch.cat((h[i, :], self.aggregate_func(h[list(self.graph.neighbors(i)), :]))))
+                                 for i in self.graph.nodes))
+
+        u_ = torch.cat((c, h_), dim=1)
+        dc = -self.Fc(u_) * c + self.Gc(u_) * self.Z(u_)
+        dh = -self.Fh(u_) * h
+
+        # ensure the gradient of c is orthogonal to the current c (trajectory on a sphere)
+        dc = dc - (torch.sum(dc*c, dim=1, keepdim=True) / torch.sum(c*c, dim=1, keepdim=True)) * c
+
+        return torch.cat((dc,  dh), dim=1)
+
+    def simulate_jump(self, t0, t1, u0, u1):
+        assert t0 < t1
+        du = torch.zeros(u0.shape)
+        sequence = []
+
+        if self.jump_type == "simulate":
+            lmbda_dt = (self.L(u0)+self.L(u1))/2 * (t1-t0)
+            rd = torch.rand(lmbda_dt.shape)
+            dN = torch.zeros(lmbda_dt.shape)
+            dN[rd < lmbda_dt**2/2] += 1
+            dN[rd < lmbda_dt**2/2 + lmbda_dt*torch.exp(-lmbda_dt)] += 1
+
+            du[:, self.p:] += self.Gh(u1) * dN
+            for nid, evntid in dN.nonzero():
+                for _ in range(dN[nid, evntid].int()):
+                    sequence.append((t1, nid, evntid))
+            self.timeseries.extend(sequence)
+
+        return du
+
+    def next_jump(self, t0, t1):
+        assert t0 != t1, "t0 can not equal t1"
+
+        t = t1
+
+        if self.jump_type == "read":
+            if t0 < t1:  # forward
+                idx = bisect.bisect_right(self.timeseries, (t0, sys.maxsize, sys.maxsize))
+                if idx != len(self.timeseries):
+                    t = min(t1, self.timeseries[idx][0])
+            else:  # backward
+                idx = bisect.bisect_left(self.timeseries, (t0, -sys.maxsize, -sys.maxsize))
+                if idx > 0:
+                    t = max(t1, self.timeseries[idx-1][0])
+
+        return torch.tensor(t, dtype=torch.float64)
+
+    def read_jump(self, t1, u1):
+        du = torch.zeros((self.graph.number_of_nodes(), p+q))
+
+        if self.jump_type == "read":
+            lid = bisect.bisect_left(self.timeseries, (t1, -sys.maxsize, -sys.maxsize))
+            rid = bisect.bisect_right(self.timeseries, (t1, sys.maxsize, sys.maxsize))
+
+            dN = torch.zeros((self.graph.number_of_nodes(), q))
+            for evnt in self.timeseries[lid:rid]:
+                t, nid, envtid = evnt
+                dN[nid, envtid] += 1
+
+            du[:, self.p:] += self.Gh(u1) * dN
+
+        return du
 
 
-def visualize(tsave, trace, lmbda, envt, itr):
+def read_timeseries(num_vertices=1):
+    dat = tick.dataset.fetch_hawkes_bund_data()
+    timeseries = []
+    for u in range(num_vertices):
+        for t in dat[0][u]:
+            timeseries.append((t, u, 0))
+
+    return sorted(timeseries)
+
+
+def visualize(tsave, trace, tsave_, trace_, lmbda, envt, itr):
     for i in range(trace.shape[1]):
         plt.figure(figsize=(6, 6), facecolor='white')
         axe = plt.gca()
@@ -105,8 +151,10 @@ def visualize(tsave, trace, lmbda, envt, itr):
         axe.set_ylabel('intensity')
         axe.set_ylim(-5.0, 5.0)
         for dat in list(trace[:, i, :].detach().numpy().T):
-            plt.plot(tsave.numpy(), dat, linewidth=0.5)
-        plt.plot(tsave.numpy(), lmbda[:, i, :].detach().numpy(), linewidth=1.0)
+            plt.plot(tsave.numpy(), dat, linewidth=0.7)
+        for dat in list(trace_[:, i, :].detach().numpy().T):
+            plt.plot(tsave_.numpy(), dat, linewidth=0.3, linestyle="dashed", color="black")
+        plt.plot(tsave.numpy(), lmbda[:, i, :].detach().numpy(), linewidth=2.0)
         plt.scatter(envt.numpy(), np.ones(len(envt))*2.0, 3.0)
         plt.savefig(args.path + '{:03d}_{:03d}'.format(i, itr), dpi=150)
 
@@ -116,15 +164,16 @@ if __name__ == '__main__':
 
     # create a graph
     G = nx.Graph()
+    # G.add_node(0)
     G.add_edge(0, 1)
-    G.add_edge(1, 2)
+    # G.add_edge(1, 2)
 
-    p, q, dt, sigma, tspan = 5, 1, 0.05, 0.10, (0.0, 300.0)
-    dat = tick.dataset.fetch_hawkes_bund_data()
-    TS = TimeSeries(sum(dat, [])[0:q], sigma, G.number_of_nodes())
+    p, q, dt, sigma, tspan = 5, 1, 0.05, 0.10, (50.0, 70.0)
+    TS = read_timeseries(G.number_of_nodes())
 
     # initialize / load model
-    func = ODEFunc(p, q, TS, G)
+    torch.manual_seed(0)
+    func = ODEFunc(p, q, jump_type="read", time_series=TS, graph=G)
     if args.restart:
         checkpoint = torch.load(args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
@@ -137,8 +186,8 @@ if __name__ == '__main__':
         it0 = 0
 
     grid = torch.arange(tspan[0], tspan[1], dt)
-    envt = torch.tensor([ts[idx][i] for ts in TS.tss for idx in ts for i in range(len(ts[idx]))
-                         if tspan[0] < ts[idx][i] < tspan[1]])
+    # envt = torch.tensor([ts[0] for ts in TS if tspan[1] < ts[0] < tspan[1]])
+    envt = torch.tensor([])
     tsave, pos = torch.sort(torch.cat((grid, envt)))
     _, od = torch.sort(pos)
     gridid = od[:len(grid)]
@@ -151,11 +200,14 @@ if __name__ == '__main__':
 
     for i in range(it0, args.niters):
         optimizer.zero_grad()
-        trace = odeint(func, torch.cat((u0p, u0q), dim=1), tsave, method='adams')
+        trace = odeint(func, torch.cat((u0p, u0q), dim=1), tsave, method='jump_adams')
         lmbda = func.L(trace)
         loss = -((torch.log(lmbda[envtid, :, 0])).sum() - (lmbda[gridid, :, 0] * dt).sum())
+        func.backtrace = []  # debug
         loss.backward()
         optimizer.step()
-        visualize(tsave, trace, lmbda, envt, i)
+        tsave_ = torch.cat(tuple(record[0].reshape((1)) for record in reversed(func.backtrace)))
+        trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
+        visualize(tsave, trace, tsave_, trace_, lmbda, envt, i)
         torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': i+1}, args.paramw)
         print("iter: ", i, "    loss: ", loss)
