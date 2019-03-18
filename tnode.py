@@ -150,10 +150,14 @@ def visualize(tsave, trace, tsave_, trace_, lmbda, evnt_record, itr):
         axe.set_xlabel('time')
         axe.set_ylabel('intensity')
         axe.set_ylim(-10.0, 10.0)
+
         for dat in list(trace[:, i, :].detach().numpy().T):
             plt.plot(tsave.numpy(), dat, linewidth=0.7)
-        for dat in list(trace_[:, i, :].detach().numpy().T):
-            plt.plot(tsave_.numpy(), dat, linewidth=0.3, linestyle="dashed", color="black")
+
+        if (tsave_ is not None) and (trace_ is not None):
+            for dat in list(trace_[:, i, :].detach().numpy().T):
+                plt.plot(tsave_.numpy(), dat, linewidth=0.3, linestyle="dashed", color="black")
+
         plt.plot(tsave.numpy(), lmbda[:, i, :].detach().numpy(), linewidth=2.0)
         evnt = np.array([record[0] for record in evnt_record if record[1] == i])
         plt.scatter(evnt, np.ones(len(evnt))*7.0, 2.0)
@@ -174,7 +178,7 @@ if __name__ == '__main__':
 
     # initialize / load model
     torch.manual_seed(0)
-    func = ODEFunc(p, q, jump_type="read", time_series=TS, graph=G)
+    func = ODEFunc(p, q, jump_type="simulate", time_series=TS, graph=G)
     if args.restart:
         checkpoint = torch.load(args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
@@ -200,16 +204,27 @@ if __name__ == '__main__':
                             {'params': u0q}
                             ], lr=1e-3, weight_decay=1e-4)
 
-    for i in range(it0, args.niters):
-        optimizer.zero_grad()
-        trace = odeint(func, torch.cat((u0p, u0q), dim=1), tsave, method='jump_adams')
-        lmbda = func.L(trace)
-        loss = -(sum([torch.log(lmbda[record]) for record in evntid_record]) - (lmbda[gridid, :, :] * dt).sum())
-        func.backtrace = []  # debug
-        loss.backward()
-        optimizer.step()
-        tsave_ = torch.cat(tuple(record[0].reshape((1)) for record in reversed(func.backtrace)))
-        trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-        visualize(tsave, trace, tsave_, trace_, lmbda, evnt_record, i)
-        torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': i+1}, args.paramw)
-        print("iter: ", i, "    loss: ", loss)
+    # if read from history, then fit to maximize likelihood
+    it = it0
+    if func.jump_type == "read":
+        while it < args.niters:
+            optimizer.zero_grad()
+            trace = odeint(func, torch.cat((u0p, u0q), dim=1), tsave, method='jump_adams')
+            lmbda = func.L(trace)
+            loss = -(sum([torch.log(lmbda[record]) for record in evntid_record]) - (lmbda[gridid, :, :] * dt).sum())
+            func.backtrace = []  # debug
+            loss.backward()
+            optimizer.step()
+
+            tsave_ = torch.cat(tuple(record[0].reshape((1)) for record in reversed(func.backtrace)))
+            trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
+            visualize(tsave, trace, tsave_, trace_, lmbda, evnt_record, it)
+            print("iter: ", it, "    loss: ", loss)
+
+            it = it + 1
+            torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': it}, args.paramw)
+
+    # simulate trace
+    trace = odeint(func, torch.cat((u0p, u0q), dim=1), grid, method='jump_adams')
+    lmbda = func.L(trace)
+    visualize(grid, trace, None, None, lmbda, [], it-1)
