@@ -169,7 +169,7 @@ if __name__ == '__main__':
     G.add_edge(0, 1)
     G.add_edge(1, 2)
 
-    p, q, dt, sigma, tspan = 5, 1, 0.05, 0.10, (65.0, 75.0)
+    p, q, dt, sigma, tspan = 5, 1, 0.05, 0.10, (0.0, 300.0)
     TS = read_timeseries(G.number_of_nodes())
 
     # initialize / load model
