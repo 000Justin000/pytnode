@@ -18,12 +18,14 @@ import networkx as nx
 from torchdiffeq import odeint_adjoint as odeint
 
 parser = argparse.ArgumentParser('tnode')
-parser.set_defaults(restart=False)
 parser.add_argument('--niters', type=int, default=100)
-parser.add_argument('--restart', dest='restart', action='store_true')
+parser.add_argument('--jump_type', type=str, default='none')
 parser.add_argument('--paramr', type=str, default='param.pth')
 parser.add_argument('--paramw', type=str, default='param.pth')
 parser.add_argument('--path', type=str, default='figs/')
+parser.set_defaults(restart=False, evnt_approx=False)
+parser.add_argument('--restart', dest='restart', action='store_true')
+parser.add_argument('--evnt_approx', dest='evnt_approx', action='store_true')
 args = parser.parse_args()
 
 
@@ -63,11 +65,10 @@ class ODEFunc(nn.Module):
 
     def forward(self, t, u):
         # print(t)
-        assert u.shape[0] == self.graph.number_of_nodes()
         c = u[:, :self.p]
         h = u[:, self.p:]
-        h_ = torch.stack(tuple(self.A(torch.cat((h[i, :], self.aggregate_func(h[list(self.graph.neighbors(i)), :]))))
-                                 for i in self.graph.nodes))
+
+        h_ = self.A(torch.cat((h, torch.stack(tuple(self.aggregate_func(h[list(self.graph.neighbors(i))]) for i in self.graph.nodes()))), dim=1))
 
         u_ = torch.cat((c, h_), dim=1)
         dc = -self.Fc(u_) * c + self.Gc(u_) * self.Z(u_)
@@ -132,8 +133,7 @@ class ODEFunc(nn.Module):
         return du
 
 
-def read_timeseries(num_vertices=1):
-    dat = tick.dataset.fetch_hawkes_bund_data()
+def read_timeseries(dat, num_vertices=1):
     timeseries = []
     for u in range(num_vertices):
         for t in dat[0][u]:
@@ -169,16 +169,17 @@ if __name__ == '__main__':
 
     # create a graph
     G = nx.Graph()
-    # G.add_node(0)
-    G.add_edge(0, 1)
-    G.add_edge(1, 2)
+    G.add_node(0)
+    # G.add_edge(0, 1)
+    # G.add_edge(1, 2)
 
     p, q, dt, sigma, tspan = 5, 1, 0.05, 0.10, (0.0, 300.0)
-    TS = read_timeseries(G.number_of_nodes())
+    dat = tick.dataset.fetch_hawkes_bund_data()
+    TS = read_timeseries(dat, G.number_of_nodes())
 
     # initialize / load model
     torch.manual_seed(0)
-    func = ODEFunc(p, q, jump_type="simulate", time_series=TS, graph=G)
+    func = ODEFunc(p, q, jump_type=args.jump_type, time_series=TS, graph=G)
     if args.restart:
         checkpoint = torch.load(args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])

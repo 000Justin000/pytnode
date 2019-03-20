@@ -2,5 +2,8 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/baselines/NeuralPointProcess" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/literature_review/MultiVariatePointProcess" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/literature_review/NeuralPointProcess" vcs="Git" />
   </component>
 </project>
