@@ -24,9 +24,9 @@ parser.add_argument('--paramr', type=str, default='param.pth')
 parser.add_argument('--paramw', type=str, default='param.pth')
 parser.add_argument('--path', type=str, default='figs/')
 parser.add_argument('--batch_size', type=int, default=1)
-parser.set_defaults(restart=False, evnt_approx=False)
+parser.set_defaults(restart=False, evnt_align=False)
 parser.add_argument('--restart', dest='restart', action='store_true')
-parser.add_argument('--evnt_approx', dest='evnt_approx', action='store_true')
+parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
 args = parser.parse_args()
 
 
@@ -145,37 +145,46 @@ def read_timeseries(dat, num_vertices=1):
     return [sorted(timeseries), sorted(timeseries), sorted(timeseries)]
 
 
+def read_timeseries(filename):
+    with open(filename) as f:
+        seqs = f.readlines()
+    return [[(float(t), vid, 0) for vid, vts in enumerate(seq.split(";")) for t in vts.split()] for seq in seqs]
+
+
+
 # this function takes in a time series and create a grid for modeling it
 # it takes an array of sequences of three tuples, and extend it to four tuple
-def create_tsave(TS, dt, tmin, tmax, evnt_approx=False):
+def create_tsave(tmin, tmax, dt, batch_record, evnt_align=False):
     """
-    :param TS: an array of sequences of three tuples
-    :param dt: step size
     :param tmin: min time of sequence
     :param tmax: max time of the sequence
-    :param evnt_approx: whether to round the event time up to the next grid point
+    :param dt: step size
+    :param batch_record: 4-tuple (raw_time, sid, nid, eid)
+    :param evnt_align: whether to round the event time up to the next grid point
     :return tsave: the time to save state in ODE simulation
-    :return TS_record: an array of four tuples, the 1st element is the sequence ID, 2nd element is the time stamp ID
+    :return gtid: grid time id
+    :return evnt_record: 4-tuple (rounded_time, sid, nid, eid)
+    :return tsne: 4-tuple (event_time_id, sid, nid, eid)
     """
 
-    if evnt_approx:
-        tc = lambda t: np.ceil(t / dt) * dt
+    if evnt_align:
+        tc = lambda t: np.round(np.ceil(t / dt) * dt, decimals=8)
     else:
         tc = lambda t: t
 
-    grid = np.arange(tmin, tmax+dt, dt)
-    evnt = np.array([tc(record[0]) for TS_ in TS for record in TS_ if tmin < tc(record[0]) < tmax])
+    evnt_record = [(tc(record[0]),) + record[1:] for record in batch_record if tmin < tc(record[0]) < tmax]
+
+    grid = np.round(np.arange(tmin, tmax+dt, dt), decimals=8)
+    evnt = np.array([record[0] for record in evnt_record])
     tsave = np.sort(np.unique(np.concatenate((grid, evnt))))
     t2tid = {t: tid for tid, t in enumerate(tsave)}
 
     # g(rid)tid
     # t(ime)s(equence)n(ode)e(vent)
     gtid = [t2tid[t] for t in grid]
-    tsne = [(t2tid[tc(record[0])],) + (sid,) + record[1:]
-            for sid in range(len(TS)) for record in TS[sid]
-            if tmin < tc(record[0]) < tmax]
+    tsne = [(t2tid[record[0]],) + record[1:] for record in evnt_record]
 
-    return torch.tensor(tsave), gtid, tsne
+    return torch.tensor(tsave), gtid, evnt_record, tsne
 
 
 def visualize(tsave, trace, tsave_, trace_, lmbda, tsne, batch_id, itr):
@@ -200,10 +209,15 @@ def visualize(tsave, trace, tsave_, trace_, lmbda, tsne, batch_id, itr):
             # plot the intensity function
             plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=2.0)
 
-            evnt_time, evnt_type = np.array(tuple(zip(*[(tsave[record[0]], record[3]) for record in tsne
-                                                        if (record[1] == sid and record[2] == nid)])))
+            tsne_current = [record for record in tsne if (record[1] == sid and record[2] == nid)]
+            evnt_time = np.array([tsave[record[0]] for record in tsne_current])
+            evnt_type = np.array([record[3] for record in tsne_current])
+
             plt.scatter(evnt_time, np.ones(len(evnt_time)) * 7.0, 2.0, c=evnt_type)
-            plt.savefig(args.path + '{:03d}_{:03d}_{:03d}.pdf'.format(batch_id[sid], nid, itr), dpi=150)
+            if (tsave_ is not None) and (trace_ is not None):
+                plt.savefig(args.path + '{:03d}_{:03d}_{:03d}'.format(batch_id[sid], nid, itr), dpi=250)
+            else:
+                plt.savefig(args.path + '{:03d}_{:03d}_{:03d}_simulate'.format(batch_id[sid], nid, itr), dpi=250)
             fig.clf()
             plt.close(fig)
 
@@ -213,13 +227,14 @@ if __name__ == '__main__':
 
     # create a graph
     G = nx.Graph()
-    # G.add_node(0)
-    G.add_edge(0, 1)
-    G.add_edge(1, 2)
+    G.add_node(0)
+    # G.add_edge(0, 1)
+    # G.add_edge(1, 2)
 
-    p, q, dt, sigma, tspan = 5, 1, 0.05, 0.10, (60.0, 70.0)
+    p, q, dt, tspan = 5, 1, 0.10, (0.0, 100.0)
     dat = tick.dataset.fetch_hawkes_bund_data()
-    TS = read_timeseries(dat, G.number_of_nodes())
+    # TS = read_timeseries(dat, G.number_of_nodes())
+    TS = read_timeseries("literature_review//MultiVariatePointProcess/sequence_generation/exponential_hawkes.csv")
 
     # initialize / load model
     torch.manual_seed(0)
@@ -248,16 +263,18 @@ if __name__ == '__main__':
 
             # sample a mini-batch, create a grid based on that
             batch_id = np.random.choice(len(TS), args.batch_size, replace=False)
-            batch = [TS[sid] for sid in batch_id]
-            tsave, gtid, tsne = create_tsave(batch, dt, tspan[0], tspan[1], args.evnt_approx)
-
+            batch = [TS[seqid] for seqid in batch_id]
             # merge the sequences to create a sequence
-            evnt_record = sorted([(record[0],) + (sid,) + record[1:]
+
+            batch_record = sorted([(record[0],) + (sid,) + record[1:]
                                   for sid in range(len(batch)) for record in batch[sid]])
+
+            tsave, gtid, evnt_record, tsne = create_tsave(tspan[0], tspan[1], dt, batch_record, args.evnt_align)
             func.evnt_record = evnt_record
 
             # forward pass
-            trace = odeint(func, torch.cat((u0p, u0q), dim=1).repeat(args.batch_size, 1, 1), tsave, method='jump_adams')
+            trace = odeint(func, torch.cat((u0p, u0q), dim=1).repeat(len(batch), 1, 1), tsave,
+                           method='jump_adams', rtol=1.0e-6, atol=1.0e-8)
             lmbda = func.L(trace)
             loss = -(sum([torch.log(lmbda[record]) for record in tsne]) - (lmbda[gtid, :, :, :] * dt).sum())
 
@@ -274,7 +291,8 @@ if __name__ == '__main__':
             torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': it}, args.paramw)
 
     # simulate trace
-    tsave, _, _ = create_tsave([], dt, tspan[0], tspan[1])
-    trace = odeint(func, torch.cat((u0p, u0q), dim=1).repeat(args.batch_size, 1, 1), tsave, method='jump_adams')
+    tsave, _, _ = create_tsave(tspan[0], tspan[1], dt, [], args.evnt_align)
+    trace = odeint(func, torch.cat((u0p, u0q), dim=1).repeat(len(batch), 1, 1), tsave,
+                   method='jump_adams', rtol=1.0e-6, atol=1.0e-8)
     lmbda = func.L(trace)
-    visualize(tsave, trace, None, None, lmbda, [], it - 1)
+    visualize(tsave, trace, None, None, lmbda, [], [0], it-1)
