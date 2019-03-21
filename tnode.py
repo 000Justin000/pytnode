@@ -65,7 +65,7 @@ class ODEFunc(nn.Module):
                     nn.init.constant_(m.bias, val=0)
 
     def forward(self, t, u):
-        print(t)
+        # print(t)
         c = u[:, :, :self.p]
         h = u[:, :, self.p:]
 
@@ -178,10 +178,10 @@ def create_tsave(TS, dt, tmin, tmax, evnt_approx=False):
     return torch.tensor(tsave), gtid, tsne
 
 
-def visualize(tsave, trace, tsave_, trace_, lmbda, tsne, itr):
+def visualize(tsave, trace, tsave_, trace_, lmbda, tsne, batch_id, itr):
     for sid in range(trace.shape[1]):
         for nid in range(trace.shape[2]):
-            plt.figure(figsize=(6, 6), facecolor='white')
+            fig = plt.figure(figsize=(6, 6), facecolor='white')
             axe = plt.gca()
             axe.set_title('Point Process Modeling')
             axe.set_xlabel('time')
@@ -200,10 +200,12 @@ def visualize(tsave, trace, tsave_, trace_, lmbda, tsne, itr):
             # plot the intensity function
             plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=2.0)
 
-            evnt_time, evnt_type = np.array(tuple(zip(*[(record[0], record[3]) for record in tsne
+            evnt_time, evnt_type = np.array(tuple(zip(*[(tsave[record[0]], record[3]) for record in tsne
                                                         if (record[1] == sid and record[2] == nid)])))
             plt.scatter(evnt_time, np.ones(len(evnt_time)) * 7.0, 2.0, c=evnt_type)
-            plt.savefig(args.path + '{:03d}_{:03d}_{:03d}'.format(sid, nid, itr), dpi=150)
+            plt.savefig(args.path + '{:03d}_{:03d}_{:03d}.pdf'.format(batch_id[sid], nid, itr), dpi=150)
+            fig.clf()
+            plt.close(fig)
 
 
 if __name__ == '__main__':
@@ -245,7 +247,8 @@ if __name__ == '__main__':
             optimizer.zero_grad()
 
             # sample a mini-batch, create a grid based on that
-            batch = [TS[sid] for sid in np.random.choice(len(TS), args.batch_size, replace=False)]
+            batch_id = np.random.choice(len(TS), args.batch_size, replace=False)
+            batch = [TS[sid] for sid in batch_id]
             tsave, gtid, tsne = create_tsave(batch, dt, tspan[0], tspan[1], args.evnt_approx)
 
             # merge the sequences to create a sequence
@@ -264,7 +267,7 @@ if __name__ == '__main__':
             optimizer.step()
             tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
             trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-            visualize(tsave, trace, tsave_, trace_, lmbda, tsne, it)
+            visualize(tsave, trace, tsave_, trace_, lmbda, tsne, batch_id, it)
             print("iter: ", it, "    loss: ", loss)
 
             it = it + 1
