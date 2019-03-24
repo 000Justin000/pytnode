@@ -20,8 +20,8 @@ from torchdiffeq import odeint_adjoint as odeint
 parser = argparse.ArgumentParser('tnode')
 parser.add_argument('--niters', type=int, default=100)
 parser.add_argument('--jump_type', type=str, default='none')
-parser.add_argument('--paramr', type=str, default='param.pth')
-parser.add_argument('--paramw', type=str, default='param.pth')
+parser.add_argument('--paramr', type=str, default='params.pth')
+parser.add_argument('--paramw', type=str, default='params.pth')
 parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--nsave', type=int, default=10)
 parser.add_argument('--dataset', type=str, default="exponential_hawkes")
@@ -40,12 +40,12 @@ class ODEFunc(nn.Module):
         self.p = p
         self.q = q
         self.jump_type = jump_type
-        self.Fc = nn.Sequential(nn.Linear(p+q, p+q), nn.Sigmoid(), nn.Linear(p + q, p), nn.Softplus())
-        self.Fh = nn.Sequential(nn.Linear(p+q, p+q), nn.Sigmoid(), nn.Linear(p + q, q), nn.Softplus())
-        self.Gc = nn.Sequential(nn.Linear(p+q, p+q), nn.Sigmoid(), nn.Linear(p + q, p), nn.Softplus())
-        self.Gh = nn.Sequential(nn.Linear(p+q, p+q), nn.Sigmoid(), nn.Linear(p + q, q), nn.Softplus())
-        self.Z  = nn.Sequential(nn.Linear(p+q, p+q), nn.Sigmoid(), nn.Linear(p + q, p), nn.Tanh())
-        self.L  = nn.Sequential(nn.Linear(p+q, p+q), nn.Sigmoid(), nn.Linear(p + q, q), nn.Softplus())
+        self.Fc = nn.Sequential(nn.Linear(p + q, p), nn.Softplus())
+        self.Fh = nn.Sequential(nn.Linear(p + q, q), nn.Softplus())
+        self.Gc = nn.Sequential(nn.Linear(p + q, p), nn.Softplus())
+        self.Gh = nn.Sequential(nn.Linear(p + q, q), nn.Softplus())
+        self.Z  = nn.Sequential(nn.Linear(p + q, p), nn.Tanh())
+        self.L  = nn.Sequential(nn.Linear(p + q, q), nn.Softplus())
         self.A  = nn.Sequential(nn.Linear(2 * q, q), nn.Softplus())
         self.evnt_record = [] if jump_type == "simulate" else evnt_record
         self.backtrace = []
@@ -174,6 +174,40 @@ def read_timeseries(filename):
     return [[(float(t), vid, 0) for vid, vts in enumerate(seq.split(";")) for t in vts.split()] for seq in seqs]
 
 
+def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch_id, itr, appendix=""):
+    for sid in range(trace.shape[1]):
+        for nid in range(trace.shape[2]):
+            fig = plt.figure(figsize=(6, 6), facecolor='white')
+            axe = plt.gca()
+            axe.set_title('Point Process Modeling')
+            axe.set_xlabel('time')
+            axe.set_ylabel('intensity')
+            axe.set_ylim(-10.0, 10.0)
+
+            # plot the state function
+            for dat in list(trace[:, sid, nid, :].detach().numpy().T):
+                plt.plot(tsave.numpy(), dat, linewidth=0.7)
+
+            # plot the state function (backward trace)
+            if (tsave_ is not None) and (trace_ is not None):
+                for dat in list(trace_[:, sid, nid, :].detach().numpy().T):
+                    plt.plot(tsave_.numpy(), dat, linewidth=0.3, linestyle="dashed", color="black")
+
+            # plot the intensity function
+            plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=2.0)
+            if (grid is not None) and (lmbda_real is not None):
+                plt.plot(grid.numpy(), lmbda_real[sid], linewidth=1.0)
+
+            tsne_current = [record for record in tsne if (record[1] == sid and record[2] == nid)]
+            evnt_time = np.array([tsave[record[0]] for record in tsne_current])
+            evnt_type = np.array([record[3] for record in tsne_current])
+
+            plt.scatter(evnt_time, np.ones(len(evnt_time)) * 7.0, 2.0, c=evnt_type)
+            plt.savefig(args.dataset + '/{:03d}_{:03d}_{:04d}'.format(batch_id[sid], nid, itr) + appendix, dpi=250)
+            fig.clf()
+            plt.close(fig)
+
+
 # this function takes in a time series and create a grid for modeling it
 # it takes an array of sequences of three tuples, and extend it to four tuple
 def create_tsave(tmin, tmax, dt, batch_record, evnt_align=False):
@@ -209,38 +243,6 @@ def create_tsave(tmin, tmax, dt, batch_record, evnt_align=False):
     return torch.tensor(tsave), gtid, evnt_record, tsne
 
 
-def visualize(tsave, trace, tsave_, trace_, lmbda, tsne, batch_id, itr, appendix=""):
-    for sid in range(trace.shape[1]):
-        for nid in range(trace.shape[2]):
-            fig = plt.figure(figsize=(6, 6), facecolor='white')
-            axe = plt.gca()
-            axe.set_title('Point Process Modeling')
-            axe.set_xlabel('time')
-            axe.set_ylabel('intensity')
-            axe.set_ylim(-10.0, 10.0)
-
-            # plot the state function
-            for dat in list(trace[:, sid, nid, :].detach().numpy().T):
-                plt.plot(tsave.numpy(), dat, linewidth=0.7)
-
-            # plot the state function (backward trace)
-            if (tsave_ is not None) and (trace_ is not None):
-                for dat in list(trace_[:, sid, nid, :].detach().numpy().T):
-                    plt.plot(tsave_.numpy(), dat, linewidth=0.3, linestyle="dashed", color="black")
-
-            # plot the intensity function
-            plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=2.0)
-
-            tsne_current = [record for record in tsne if (record[1] == sid and record[2] == nid)]
-            evnt_time = np.array([tsave[record[0]] for record in tsne_current])
-            evnt_type = np.array([record[3] for record in tsne_current])
-
-            plt.scatter(evnt_time, np.ones(len(evnt_time)) * 7.0, 2.0, c=evnt_type)
-            plt.savefig(args.dataset + '/{:03d}_{:03d}_{:03d}'.format(batch_id[sid], nid, itr) + appendix, dpi=250)
-            fig.clf()
-            plt.close(fig)
-
-
 def forward_pass(func, u0, tspan, dt, batch):
     # merge the sequences to create a sequence
     batch_record = sorted([(record[0],) + (sid,) + record[1:]
@@ -255,7 +257,42 @@ def forward_pass(func, u0, tspan, dt, batch):
     lmbda = func.L(trace)
     loss = -(sum([torch.log(lmbda[record]) for record in tsne]) - (lmbda[gtid, :, :, :] * dt).sum())
 
-    return tsave, trace, lmbda, tsne, loss
+    return tsave, trace, lmbda, gtid, tsne, loss
+
+
+def exponential_hawkes_lmbda(tmin, tmax, dt, lmbda0, alpha, beta, TS, evnt_align=False):
+    if evnt_align:
+        tc = lambda t: np.round(np.ceil(t / dt) * dt, decimals=8)
+    else:
+        tc = lambda t: t
+
+    cl = lambda t: np.round(np.ceil(t / dt) * dt, decimals=8)
+    grid = np.round(np.arange(tmin, tmax+dt, dt), decimals=8)
+    t2tid = {t: tid for tid, t in enumerate(grid)}
+
+    lmbda = []
+    kernel = alpha * np.exp(-beta * np.arange(0.0, 10.0/beta, dt))
+
+    for ts in TS:
+        vv = np.zeros(grid.shape)
+        for record in ts:
+            vv[t2tid[cl(record[0]-tmin)]] = np.exp(-beta * (cl(record[0]-tmin) - tc(record[0]-tmin)))
+        lmbda.append(lmbda0 + np.convolve(kernel, vv)[:grid.shape[0]])
+
+    return lmbda
+
+
+def self_inhibiting_lmbda(tmin, tmax, dt, mu, beta, TS):
+    grid = np.round(np.arange(tmin, tmax+dt, dt), decimals=8)
+
+    lmbda = []
+    for ts in TS:
+        lmbda0 = mu * (grid-tmin)
+        for record in ts:
+            lmbda0[grid > record[0]] -= beta
+        lmbda.append(np.exp(lmbda0))
+
+    return lmbda
 
 
 if __name__ == '__main__':
@@ -266,16 +303,22 @@ if __name__ == '__main__':
     G.add_node(0)
 
     p, q, dt, tspan = 5, 1, 0.05, (0.0, 100.0)
-    path = "literature_review/MultiVariatePointProcess/sequence_generation/data/"
+    path = "literature_review/MultiVariatePointProcess/experiments/data/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv")
     TSVA = read_timeseries(path + args.dataset + "_validation.csv")
     TSTE = read_timeseries(path + args.dataset + "_testing.csv")
+
+    if args.dataset == "exponential_hawkes":
+        lmbda_va_real = exponential_hawkes_lmbda(tspan[0], tspan[1], dt, 0.2, 0.8, 1.0, TSVA, args.evnt_align)
+    elif args.dataset == "self_inhibiting":
+        lmbda_va_real = self_inhibiting_lmbda(tspan[0], tspan[1], dt, 0.5, 0.2, TSVA)
+
 
     # initialize / load model
     torch.manual_seed(0)
     func = ODEFunc(p, q, jump_type=args.jump_type, graph=G)
     if args.restart:
-        checkpoint = torch.load(args.paramr)
+        checkpoint = torch.load(args.dataset + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
         u0p = checkpoint['u0p']
         u0q = checkpoint['u0q']
@@ -304,7 +347,7 @@ if __name__ == '__main__':
             batch = [TSTR[seqid] for seqid in batch_id]
 
             # forward pass
-            tsave, trace, lmbda, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, batch)
+            tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, batch)
             loss_meter.update(loss.item() / len(batch))
             print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg))
 
@@ -320,7 +363,7 @@ if __name__ == '__main__':
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
-                tsave, trace, lmbda, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, TSVA)
+                tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, TSVA)
                 print("iter: {}, validation loss: {:.4f}".format(it, loss.item()/len(TSVA)))
 
                 # backward prop
@@ -330,17 +373,18 @@ if __name__ == '__main__':
                 # visualize
                 tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
                 trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-                visualize(tsave, trace, tsave_, trace_, lmbda, tsne, range(len(TSVA)), it)
+                visualize(tsave, trace, lmbda, tsave_, trace_, tsave[gtid], lmbda_va_real, tsne, range(len(TSVA)), it)
 
                 # save
-                torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': it}, args.paramw)
+                torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': it},
+                           args.dataset + "/" + args.paramw)
 
     # simulate for validation set
     func.jump_type = "simulate"
-    tsave, trace, lmbda, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, [[]]*len(TSVA))
-    visualize(tsave, trace, None, None, lmbda, tsne, range(len(TSVA)), it, "simulate")
+    tsave, trace, lmbda, gitd, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, [[]]*len(TSVA))
+    visualize(tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSVA)), it, "simulate")
 
     # computing testing error
     # func.jump_type = "read"
-    # tsave, trace, lmbda, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, TSTE)
+    # tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, TSTE)
     # print("iter: {}, testing loss: {:.4f}".format(it, loss.item()/len(TSTE)))
