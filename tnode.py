@@ -1,15 +1,9 @@
-import os
 import sys
 import signal
 import argparse
-import time
-import random
 import numpy as np
-import functools
-import itertools
 import bisect
 import matplotlib.pyplot as plt
-import tick.dataset
 
 import torch
 import torch.nn as nn
@@ -45,8 +39,8 @@ class ODEFunc(nn.Module):
         self.Gc = nn.Sequential(nn.Linear(p + q, p), nn.Softplus())
         self.Gh = nn.Sequential(nn.Linear(p + q, q), nn.Softplus())
         self.Z  = nn.Sequential(nn.Linear(p + q, p), nn.Tanh())
-        self.L  = nn.Sequential(nn.Linear(p + q, q), nn.Softplus())
-        self.A  = nn.Sequential(nn.Linear(2 * q, q), nn.Softplus())
+        self.L = nn.Sequential(nn.Linear(p + q, q), nn.Softplus())
+        self.A = nn.Sequential(nn.Linear(2 * q, q), nn.Softplus())
         self.evnt_record = [] if jump_type == "simulate" else evnt_record
         self.backtrace = []
         if graph:
