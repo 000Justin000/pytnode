@@ -27,8 +27,8 @@ args = parser.parse_args()
 
 # exponential activation function
 class Exponential(nn.Module):
-
     def __init__(self, beta=1.0):
+        super(Exponential, self).__init__()
         self.beta = beta
 
     def forward(self, x):
