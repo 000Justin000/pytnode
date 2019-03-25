@@ -1,4 +1,6 @@
 #include <iostream>
+#include <fstream>
+#include <iomanip>
 #include <Eigen/Dense>
 #include "Sequence.h"
 #include "OgataThinning.h"
@@ -24,8 +26,15 @@ int main(const int argc, const char** argv)
 	HawkesGeneralKernel hawkes(num_params, dim, triggeringkernels);
 	hawkes.SetParameters(params);
 	OgataThinning ot(dim);
+
+	unsigned num_sequences = 500;
+    double T = 100.0;
+	std::cout << "1. Simulating " << num_sequences << " sequences with " << T << " length each " << std::endl;
+
+    std::vector<double> vec_T(num_sequences, T);
+
 	std::vector<Sequence> sequences;
-	ot.Simulate(hawkes, 1000, 100, sequences);
+	ot.Simulate(hawkes, vec_T, sequences);
 
 	HawkesGeneralKernel hawkes_new(num_params, dim, triggeringkernels);
 
@@ -40,6 +49,19 @@ int main(const int argc, const char** argv)
 	std::cout << hawkes_new.GetParameters().transpose() << std::endl;
 	std::cout << "True Parameters : " << std::endl;
 	std::cout << params.transpose() << std::endl;
+
+    std::ofstream fout;
+    fout.open("simulation.csv"); 
+    for (Sequence sequence: sequences)
+    {
+        for (int u = 0; u < 1; u++)
+        {
+            for (Event evnt: sequence.GetEvents())
+                fout << std::fixed << std::setw(12) << std::setprecision(6) << evnt.time;
+            fout << ";";
+        }
+        fout << "\n";
+    }
 
 	return 0;
 }

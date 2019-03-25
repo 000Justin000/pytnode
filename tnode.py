@@ -224,7 +224,7 @@ def create_tsave(tmin, tmax, dt, batch_record, evnt_align=False):
     """
 
     if evnt_align:
-        tc = lambda t: np.round(np.ceil(t / dt) * dt, decimals=8)
+        tc = lambda t: np.round(np.ceil((t-tmin) / dt) * dt + tmin, decimals=8)
     else:
         tc = lambda t: t
 
@@ -262,11 +262,11 @@ def forward_pass(func, u0, tspan, dt, batch):
 
 def exponential_hawkes_lmbda(tmin, tmax, dt, lmbda0, alpha, beta, TS, evnt_align=False):
     if evnt_align:
-        tc = lambda t: np.round(np.ceil(t / dt) * dt, decimals=8)
+        tc = lambda t: np.round(np.ceil((t-tmin) / dt) * dt + tmin, decimals=8)
     else:
         tc = lambda t: t
 
-    cl = lambda t: np.round(np.ceil(t / dt) * dt, decimals=8)
+    cl = lambda t: np.round(np.ceil((t-tmin) / dt) * dt + tmin, decimals=8)
     grid = np.round(np.arange(tmin, tmax+dt, dt), decimals=8)
     t2tid = {t: tid for tid, t in enumerate(grid)}
 
@@ -276,8 +276,29 @@ def exponential_hawkes_lmbda(tmin, tmax, dt, lmbda0, alpha, beta, TS, evnt_align
     for ts in TS:
         vv = np.zeros(grid.shape)
         for record in ts:
-            vv[t2tid[cl(record[0]-tmin)]] = np.exp(-beta * (cl(record[0]-tmin) - tc(record[0]-tmin)))
+            vv[t2tid[cl(record[0])]] = np.exp(-beta * (cl(record[0]) - tc(record[0])))
         lmbda.append(lmbda0 + np.convolve(kernel, vv)[:grid.shape[0]])
+
+    return lmbda
+
+
+def powerlaw_hawkes_lmbda(tmin, tmax, dt, lmbda0, alpha, beta, sigma, TS, evnt_align=False):
+    cl = lambda t: np.round(np.ceil((t-tmin) / dt) * dt + tmin, decimals=8)
+    grid = np.round(np.arange(tmin, tmax+dt, dt), decimals=8)
+    t2tid = {t: tid for tid, t in enumerate(grid)}
+
+    lmbda = []
+    kernel_grid = np.arange(dt, 10.0 + 10.0*sigma, dt)
+    kernel = np.concatenate(([0], alpha * (beta/sigma) * (kernel_grid > sigma) * (kernel_grid / sigma)**(-beta-1)))
+
+    if evnt_align:
+        for ts in TS:
+            vv = np.zeros(grid.shape)
+            for record in ts:
+                vv[t2tid[cl(record[0])]] = 1.0
+            lmbda.append(lmbda0 + np.convolve(kernel, vv)[:grid.shape[0]])
+    else:
+        raise Exception("option not implemented")
 
     return lmbda
 
@@ -310,9 +331,10 @@ if __name__ == '__main__':
 
     if args.dataset == "exponential_hawkes":
         lmbda_va_real = exponential_hawkes_lmbda(tspan[0], tspan[1], dt, 0.2, 0.8, 1.0, TSVA, args.evnt_align)
+    elif args.dataset == "powerlaw_hawkes":
+        lmbda_va_real = powerlaw_hawkes_lmbda(tspan[0], tspan[1], dt, 0.2, 0.8, 2.0, 1.0, TSVA, args.evnt_align)
     elif args.dataset == "self_inhibiting":
         lmbda_va_real = self_inhibiting_lmbda(tspan[0], tspan[1], dt, 0.5, 0.2, TSVA)
-
 
     # initialize / load model
     torch.manual_seed(0)

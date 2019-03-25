@@ -15,11 +15,13 @@ CXX := g++
 SRCS = $(wildcard *.cc)
 PROGS = $(patsubst %.cc,%,$(SRCS))
 
-TARGET = $(patsubst %, build/%, $(PROGS))
+build_dir = ./build
+
+TARGET = $(patsubst %,$(build_dir)/%,$(PROGS))
 
 all: $(TARGET)
 
-%: ../%.cc $(ptpack_lib)
+$(build_dir)/%: %.cc $(ptpack_lib)
 	$(CXX) $(CXXFLAGS) -o $@ $< -L$(lib_dir) -lptpack
 
 clean:
