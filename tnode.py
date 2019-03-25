@@ -25,24 +25,31 @@ parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
 args = parser.parse_args()
 
 
+# exponential activation function
+class Exponential(nn.Module):
+
+    def __init__(self, beta=1.0):
+        self.beta = beta
+
+    def forward(self, x):
+        return torch.exp(self.beta * x)
+
+
 class ODEFunc(nn.Module):
 
-    def __init__(self, p, q, jump_type="simulate", evnt_record=None, graph=None, aggregate_func=None):
+    def __init__(self, p, q, nhidden=20, jump_type="simulate", evnt_record=None, graph=None, aggregate_func=None, decay_rate=1.0e-3):
         super(ODEFunc, self).__init__()
 
         assert jump_type in ["simulate", "read", "none"], "invalide jump_type, must be one of [simulate, read, none]"
         self.p = p
         self.q = q
         self.jump_type = jump_type
-        self.Fc = nn.Sequential(nn.Linear(p + q, p), nn.Softplus())
-        self.Fh = nn.Sequential(nn.Linear(p + q, q), nn.Softplus())
-        self.Gc = nn.Sequential(nn.Linear(p + q, p), nn.Softplus())
-        self.Gh = nn.Sequential(nn.Linear(p + q, q), nn.Softplus())
-        self.Z  = nn.Sequential(nn.Linear(p + q, p), nn.Tanh())
-        self.L = nn.Sequential(nn.Linear(p + q, q), nn.Softplus())
-        self.A = nn.Sequential(nn.Linear(2 * q, q), nn.Softplus())
-        self.evnt_record = [] if jump_type == "simulate" else evnt_record
-        self.backtrace = []
+        self.Fc = nn.Sequential(nn.Linear(p+q, p), nn.Softplus())
+        self.Fh = nn.Sequential(nn.Linear(p+q, q), nn.Softplus())
+        self.Gc = nn.Sequential(nn.Linear(p+q, nhidden), nn.CELU(), nn.Linear(nhidden, nhidden), nn.CELU(), nn.Linear(nhidden, p))
+        self.Gh = nn.Sequential(nn.Linear(p+q, q), nn.Softplus())
+        self.L = nn.Sequential(nn.Linear(p+q, q), Exponential())
+        self.A = nn.Sequential(nn.Linear(2*q, q), nn.Softplus())
         if graph:
             self.graph = graph
         else:
@@ -52,8 +59,11 @@ class ODEFunc(nn.Module):
             self.aggregate_func = aggregate_func
         else:
             self.aggregate_func = lambda vnb: torch.zeros(vnb.shape[::2]) if vnb.shape[1] == 0 else vnb.mean(dim=1)
+        self.decay_rate = decay_rate
+        self.evnt_record = [] if jump_type == "simulate" else evnt_record
+        self.backtrace = []
 
-        for net in [self.Fc, self.Fh, self.Gc, self.Gh, self.Z, self.L, self.A]:
+        for net in [self.Fc, self.Fh, self.Gc, self.Gh, self.L, self.A]:
             for m in net.modules():
                 if isinstance(m, nn.Linear):
                     nn.init.normal_(m.weight, mean=0, std=0.1)
@@ -68,11 +78,13 @@ class ODEFunc(nn.Module):
                                                     for nid in self.graph.nodes()), dim=1)), dim=2))
 
         u_ = torch.cat((c, h_), dim=2)
-        dc = -self.Fc(u_) * c + self.Gc(u_) * self.Z(u_)
+        dc = -self.Fc(u_) * c + self.Gc(u_)
         dh = -self.Fh(u_) * h
 
         # ensure the gradient of c is orthogonal to the current c (trajectory on a sphere)
-        dc = dc - (torch.sum(dc * c, dim=2, keepdim=True) / torch.sum(c * c, dim=2, keepdim=True)) * c
+        # dc = dc - (torch.sum(dc * c, dim=2, keepdim=True) / torch.sum(c * c, dim=2, keepdim=True)) * c
+        # add decay at constant rate
+        dc = dc - self.decay_rate * c
 
         return torch.cat((dc, dh), dim=2)
 
