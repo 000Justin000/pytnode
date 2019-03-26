@@ -19,6 +19,7 @@ parser.add_argument('--paramw', type=str, default='params.pth')
 parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--nsave', type=int, default=10)
 parser.add_argument('--dataset', type=str, default="exponential_hawkes")
+parser.add_argument('--suffix', type=str, default="")
 parser.set_defaults(restart=False, evnt_align=False)
 parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
@@ -197,7 +198,7 @@ def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch
             evnt_type = np.array([record[3] for record in tsne_current])
 
             plt.scatter(evnt_time, np.ones(len(evnt_time)) * 7.0, 2.0, c=evnt_type)
-            plt.savefig(args.dataset + '/{:03d}_{:03d}_{:04d}'.format(batch_id[sid], nid, itr) + appendix, dpi=250)
+            plt.savefig(args.dataset + args.suffix + '/{:03d}_{:03d}_{:04d}'.format(batch_id[sid], nid, itr) + appendix, dpi=250)
             fig.clf()
             plt.close(fig)
 
@@ -329,12 +330,14 @@ if __name__ == '__main__':
         lmbda_va_real = powerlaw_hawkes_lmbda(tspan[0], tspan[1], dt, 0.2, 0.8, 2.0, 1.0, TSVA, args.evnt_align)
     elif args.dataset == "self_inhibiting":
         lmbda_va_real = self_inhibiting_lmbda(tspan[0], tspan[1], dt, 0.5, 0.2, TSVA)
+    else:
+        raise Exception("unknown dataset")
 
     # initialize / load model
     torch.manual_seed(0)
     func = ODEFunc(p, q, jump_type=args.jump_type, graph=G)
     if args.restart:
-        checkpoint = torch.load(args.dataset + "/" + args.paramr)
+        checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
         u0p = checkpoint['u0p']
         u0q = checkpoint['u0q']
@@ -393,7 +396,7 @@ if __name__ == '__main__':
 
                 # save
                 torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': it},
-                           args.dataset + "/" + args.paramw)
+                           args.dataset + args.suffix + "/" + args.paramw)
 
     # simulate for validation set
     func.jump_type = "simulate"
