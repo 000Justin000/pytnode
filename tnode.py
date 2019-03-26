@@ -37,7 +37,7 @@ class Exponential(nn.Module):
 
 class ODEFunc(nn.Module):
 
-    def __init__(self, p, q, nhidden=20, jump_type="simulate", evnt_record=None, graph=None, aggregate_func=None, decay_rate=1.0e-3):
+    def __init__(self, p, q, nhidden=20, jump_type="simulate", evnt_record=None, graph=None, aggregate_func=None):
         super(ODEFunc, self).__init__()
 
         assert jump_type in ["simulate", "read", "none"], "invalide jump_type, must be one of [simulate, read, none]"
@@ -50,6 +50,8 @@ class ODEFunc(nn.Module):
         self.Gh = nn.Sequential(nn.Linear(p+q, q), nn.Softplus())
         self.L = nn.Sequential(nn.Linear(p+q, q), Exponential())
         self.A = nn.Sequential(nn.Linear(2*q, q), nn.Softplus())
+        self.evnt_record = [] if jump_type == "simulate" else evnt_record
+        self.backtrace = []
         if graph:
             self.graph = graph
         else:
@@ -59,9 +61,6 @@ class ODEFunc(nn.Module):
             self.aggregate_func = aggregate_func
         else:
             self.aggregate_func = lambda vnb: torch.zeros(vnb.shape[::2]) if vnb.shape[1] == 0 else vnb.mean(dim=1)
-        self.decay_rate = decay_rate
-        self.evnt_record = [] if jump_type == "simulate" else evnt_record
-        self.backtrace = []
 
         for net in [self.Fc, self.Fh, self.Gc, self.Gh, self.L, self.A]:
             for m in net.modules():
@@ -82,9 +81,7 @@ class ODEFunc(nn.Module):
         dh = -self.Fh(u_) * h
 
         # ensure the gradient of c is orthogonal to the current c (trajectory on a sphere)
-        # dc = dc - (torch.sum(dc * c, dim=2, keepdim=True) / torch.sum(c * c, dim=2, keepdim=True)) * c
-        # add decay at constant rate
-        dc = dc - self.decay_rate * c
+        dc = dc - (torch.sum(dc * c, dim=2, keepdim=True) / torch.sum(c * c, dim=2, keepdim=True)) * c
 
         return torch.cat((dc, dh), dim=2)
 
