@@ -374,7 +374,7 @@ if __name__ == '__main__':
             # forward pass
             tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, batch)
             loss_meter.update(loss.item() / len(batch))
-            print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg))
+            print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg), flush=True)
 
             # backward prop
             func.backtrace.clear()
@@ -389,7 +389,7 @@ if __name__ == '__main__':
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
                 tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, TSVA)
-                print("iter: {}, validation loss: {:.4f}".format(it, loss.item()/len(TSVA)))
+                print("iter: {}, validation loss: {:.4f}".format(it, loss.item()/len(TSVA)), flush=True)
 
                 # backward prop
                 func.backtrace.clear()
