@@ -81,7 +81,7 @@ class ODEFunc(nn.Module):
         dh = -self.Fh(u_) * h
 
         # ensure the gradient of c is orthogonal to the current c (trajectory on a sphere)
-        dc = dc - (torch.sum(dc * c, dim=2, keepdim=True) / torch.sum(c * c, dim=2, keepdim=True)) * c
+        # dc = dc - (torch.sum(dc * c, dim=2, keepdim=True) / torch.sum(c * c, dim=2, keepdim=True)) * c
 
         return torch.cat((dc, dh), dim=2)
 
