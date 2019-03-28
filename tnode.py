@@ -120,6 +120,8 @@ class ODEFunc(nn.Module):
                 idx = bisect.bisect_left(self.evnt_record, (t0, -inf, -inf, -inf))
                 if idx > 0:
                     t = max(t1, torch.tensor(self.evnt_record[idx-1][0], dtype=torch.float64))
+
+        assert t != t1, "t can not equal t1"
         return t
 
     def read_jump(self, t1, u1):
