@@ -18,7 +18,8 @@ parser.add_argument('--paramr', type=str, default='params.pth')
 parser.add_argument('--paramw', type=str, default='params.pth')
 parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--nsave', type=int, default=10)
-parser.add_argument('--dataset', type=str, default="exponential_hawkes")
+parser.add_argument('--dataset', type=str, default='exponential_hawkes')
+parser.add_argument('--suffix', type=str, default='')
 parser.set_defaults(restart=False, evnt_align=False)
 parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
@@ -208,7 +209,7 @@ def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch
             evnt_type = np.array([record[3] for record in tsne_current])
 
             plt.scatter(evnt_time, np.ones(len(evnt_time)) * 7.0, 2.0, c=evnt_type)
-            plt.savefig(args.dataset + '/{:03d}_{:03d}_{:04d}'.format(batch_id[sid], nid, itr) + appendix, dpi=250)
+            plt.savefig(args.dataset + args.suffix + '/{:03d}_{:03d}_{:04d}'.format(batch_id[sid], nid, itr) + appendix, dpi=250)
             fig.clf()
             plt.close(fig)
 
@@ -345,7 +346,7 @@ if __name__ == '__main__':
     torch.manual_seed(0)
     func = ODEFunc(p, q, jump_type=args.jump_type, graph=G)
     if args.restart:
-        checkpoint = torch.load(args.dataset + "/" + args.paramr)
+        checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
         u0p = checkpoint['u0p']
         u0q = checkpoint['u0q']
@@ -370,6 +371,7 @@ if __name__ == '__main__':
             optimizer.zero_grad()
 
             # sample a mini-batch, create a grid based on that
+            torch.manual_seed(it)
             batch_id = np.random.choice(len(TSTR), args.batch_size, replace=False)
             batch = [TSTR[seqid] for seqid in batch_id]
 
@@ -387,6 +389,9 @@ if __name__ == '__main__':
 
             it = it+1
 
+            # save
+            torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
+
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
@@ -402,9 +407,6 @@ if __name__ == '__main__':
                 trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
                 visualize(tsave, trace, lmbda, tsave_, trace_, tsave[gtid], lmbda_va_real, tsne, range(len(TSVA)), it)
 
-                # save
-                torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': it},
-                           args.dataset + "/" + args.paramw)
 
     # simulate for validation set
     func.jump_type = "simulate"
