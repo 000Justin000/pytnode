@@ -95,7 +95,7 @@ class GCU(nn.Module):
 
 class ODEFunc(nn.Module):
 
-    def __init__(self, dim_z, dim_k, dim_hidden=20, num_hidden=0, jump_type="none", evnt_record=None, graph=None, activation=nn.Sigmoid(), aggregation=None):
+    def __init__(self, dim_z, dim_k, dim_hidden=20, num_hidden=0, jump_type="none", evnt_record=None, graph=None, activation=nn.CELU(), aggregation=None):
         super(ODEFunc, self).__init__()
 
         assert jump_type in ["simulate", "read", "none"], "invalide jump_type, must be one of [simulate, read, none]"
@@ -381,7 +381,7 @@ if __name__ == '__main__':
 
     # initialize / load model
     torch.manual_seed(0)
-    func = ODEFunc(dim_z, dim_k, dim_hidden=20, num_hidden=1, jump_type=args.jump_type, graph=G, activation=nn.CELU())
+    func = ODEFunc(dim_z, dim_k, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, graph=G, activation=nn.CELU())
     if args.restart:
         checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
@@ -393,7 +393,7 @@ if __name__ == '__main__':
 
     optimizer = optim.Adam([{'params': func.parameters()},
                             {'params': z0, 'lr': 1e-2},
-                            ], lr=1e-2, weight_decay=1e-4)
+                            ], lr=1e-3, weight_decay=1e-4)
 
     loss_meter = RunningAverageMeter()
 
