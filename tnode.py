@@ -28,6 +28,7 @@ args = parser.parse_args()
 
 # exponential activation function
 class Exponential(nn.Module):
+
     def __init__(self, beta=1.0):
         super(Exponential, self).__init__()
         self.beta = beta
@@ -36,21 +37,75 @@ class Exponential(nn.Module):
         return torch.exp(self.beta * x)
 
 
+# multi-layer perceptron
+class MLP(nn.Module):
+
+    def __init__(self, dim_in, dim_out, dim_hidden, num_hidden, activation):
+        super(MLP, self).__init__()
+
+        if num_hidden == 0:
+            self.linears = nn.ModuleList([nn.Linear(dim_in, dim_out)])
+        elif num_hidden >= 1:
+            self.linears = nn.ModuleList()
+            self.linears.append(nn.Linear(dim_in, dim_hidden))
+            self.linears.extend([nn.Linear(dim_hidden, dim_hidden) for _ in range(num_hidden-1)])
+            self.linears.append(nn.Linear(dim_hidden, dim_out))
+        else:
+            raise Exception('number of hidden layers must be positive')
+
+        for m in self.linears:
+            nn.init.normal_(m.weight, mean=0, std=0.1)
+            nn.init.constant_(m.bias, val=0)
+
+        self.activation = activation
+
+    def forward(self, x):
+        for m in self.linears[:-1]:
+            x = self.activation(m(x))
+
+        return self.linears[-1](x)
+
+
+# graph convolution unit
+class GCU(nn.Module):
+
+    def __init__(self, dim_z, dim_hidden, num_hidden, activation, aggregation=None):
+        super(GCU, self).__init__()
+
+        self.cur = nn.Sequential(MLP(dim_z,   dim_hidden, dim_hidden, num_hidden, activation), activation)
+        self.nbr = nn.Sequential(MLP(dim_z*2, dim_hidden, dim_hidden, num_hidden, activation), activation)
+        self.out = nn.Linear(num_hidden*2, dim_z)
+
+        nn.init.normal_(self.out.weight, mean=0, std=0.1)
+        nn.init.constant_(self.out.bias, val=0)
+
+        if aggregation is None:
+            self.aggregation = lambda xnbr: torch.zeros(xnbr.shape[::2]) if xnbr.shape[1] == 0 else xnbr.sum(dim=1)
+        else:
+            self.aggregation = aggregation
+
+    def forward(self, zcur, znbr):
+        assert len(zcur.shape) == 2, 'xcur need to be 2 dimensional vector accessed by [seq_id, dim_id]'
+        assert len(znbr.shape) == 3, 'xnbr need to be 3 dimensional vector accessed by [seq_id, nbr_id, dim_id]'
+        vcur = self.cur(zcur)
+        vnbr = self.aggregation(self.nbr(torch.cat((zcur.repeat(1, znbr.shape[1], 1), znbr), dim=2)))
+
+        return self.out(torch.cat((vcur, vnbr), dim=1))
+
+
 class ODEFunc(nn.Module):
 
-    def __init__(self, p, q, nhidden=20, jump_type="simulate", evnt_record=None, graph=None, aggregate_func=None):
+    def __init__(self, dim_z, dim_k, dim_hidden=20, num_hidden=0, jump_type="none", evnt_record=None, graph=None, activation=nn.Sigmoid(), aggregation=None):
         super(ODEFunc, self).__init__()
 
         assert jump_type in ["simulate", "read", "none"], "invalide jump_type, must be one of [simulate, read, none]"
-        self.p = p
-        self.q = q
+        self.dim_z = dim_z
+        self.dim_k = dim_k
+        self.F = GCU(dim_z, dim_hidden, num_hidden, activation, aggregation)
+        self.G = nn.Sequential(MLP(dim_z, dim_z, dim_hidden, num_hidden, activation), nn.Softplus())
+        self.W = nn.ModuleList([MLP(dim_z, dim_z, dim_hidden, num_hidden, activation) for _ in range(dim_k)])
+        self.L = nn.Sequential(MLP(dim_z, dim_k, dim_hidden, num_hidden, activation), Exponential())
         self.jump_type = jump_type
-        self.Fc = nn.Sequential(nn.Linear(p+q, p), nn.Softplus())
-        self.Fh = nn.Sequential(nn.Linear(p+q, q), nn.Softplus())
-        self.Gc = nn.Sequential(nn.Linear(p+q, nhidden), nn.CELU(), nn.Linear(nhidden, nhidden), nn.CELU(), nn.Linear(nhidden, p))
-        self.Gh = nn.Sequential(nn.Linear(p+q, q), nn.Softplus())
-        self.L = nn.Sequential(nn.Linear(p+q, q), Exponential())
-        self.A = nn.Sequential(nn.Linear(2*q, q), nn.Softplus())
         self.evnt_record = [] if jump_type == "simulate" else evnt_record
         self.backtrace = []
         if graph:
@@ -58,53 +113,35 @@ class ODEFunc(nn.Module):
         else:
             self.graph = nx.Graph()
             self.graph.add_node(0)
-        if aggregate_func:
-            self.aggregate_func = aggregate_func
-        else:
-            self.aggregate_func = lambda vnb: torch.zeros(vnb.shape[::2]) if vnb.shape[1] == 0 else vnb.mean(dim=1)
 
-        for net in [self.Fc, self.Fh, self.Gc, self.Gh, self.L, self.A]:
-            for m in net.modules():
-                if isinstance(m, nn.Linear):
-                    nn.init.normal_(m.weight, mean=0, std=0.1)
-                    nn.init.constant_(m.bias, val=0)
+    def forward(self, t, z):
+        assert len(z.shape) == 2, 'z need to be 3 dimensional vector accessed by [seq_id, node_id, dim_id]'
 
-    def forward(self, t, u):
-        # print(t)
-        c = u[:, :, :self.p]
-        h = u[:, :, self.p:]
+        dz = torch.stack(tuple(self.F(z[:, nid, :], z[:, list(self.graph.neighbors(nid)), :]) for nid in self.graph.nodes()), dim=1)
+        dz -= torch.G(z) * z
 
-        h_ = self.A(torch.cat((h, torch.stack(tuple(self.aggregate_func(h[:, list(self.graph.neighbors(nid)), :])
-                                                    for nid in self.graph.nodes()), dim=1)), dim=2))
+        return dz
 
-        u_ = torch.cat((c, h_), dim=2)
-        dc = -self.Fc(u_) * c + self.Gc(u_)
-        dh = -self.Fh(u_) * h
-
-        # ensure the gradient of c is orthogonal to the current c (trajectory on a sphere)
-        # dc = dc - (torch.sum(dc * c, dim=2, keepdim=True) / torch.sum(c * c, dim=2, keepdim=True)) * c
-
-        return torch.cat((dc, dh), dim=2)
-
-    def simulate_jump(self, t0, t1, u0, u1):
+    def simulate_jump(self, t0, t1, z0, z1):
         assert t0 < t1
-        du = torch.zeros(u0.shape)
+        dz = torch.zeros(z0.shape)
         sequence = []
 
         if self.jump_type == "simulate":
-            lmbda_dt = (self.L(u0) + self.L(u1)) / 2 * (t1 - t0)
+            lmbda_dt = (self.L(z0) + self.L(z1)) / 2 * (t1 - t0)
             rd = torch.rand(lmbda_dt.shape)
             dN = torch.zeros(lmbda_dt.shape)
             dN[rd < lmbda_dt ** 2 / 2] += 1
             dN[rd < lmbda_dt ** 2 / 2 + lmbda_dt * torch.exp(-lmbda_dt)] += 1
 
-            du[:, :, self.p:] += self.Gh(u1) * dN
-            for evnt in dN.nonzero():
-                for _ in range(dN[tuple(evnt)].int()):
-                    sequence.append((t1,) + tuple(evnt))
+            dz += torch.matmul(torch.stack(tuple(W_(z1) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze()
+            if dN.sum() != 0:
+                for evnt in dN.nonzero():
+                    for _ in range(dN[tuple(evnt)].int()):
+                        sequence.append((t1,) + tuple(evnt))
             self.evnt_record.extend(sequence)
 
-        return du
+        return dz
 
     def next_jump(self, t0, t1):
         assert t0 != t1, "t0 can not equal t1"
@@ -125,22 +162,22 @@ class ODEFunc(nn.Module):
         assert t != t1, "t can not equal t1"
         return t
 
-    def read_jump(self, t1, u1):
-        du = torch.zeros(u1.shape)
+    def read_jump(self, t1, z1):
+        dz = torch.zeros(z1.shape)
 
         if self.jump_type == "read":
             inf = sys.maxsize
             lid = bisect.bisect_left(self.evnt_record, (t1, -inf, -inf, -inf))
             rid = bisect.bisect_right(self.evnt_record, (t1, inf, inf, inf))
 
-            dN = torch.zeros(u1.shape[:2] + (self.q,))
+            dN = torch.zeros(z1.shape[:2] + (self.dim_k,))
             for evnt in self.evnt_record[lid:rid]:
                 t, sid, nid, eid = evnt
                 dN[sid, nid, eid] += 1
 
-            du[:, :, self.p:] += self.Gh(u1) * dN
+            dz += torch.matmul(torch.stack(tuple(W_(z1) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze()
 
-        return du
+        return dz
 
 
 class RunningAverageMeter(object):
