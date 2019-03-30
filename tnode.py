@@ -368,6 +368,7 @@ if __name__ == '__main__':
             optimizer.zero_grad()
 
             # sample a mini-batch, create a grid based on that
+            torch.manual_seed(it)
             batch_id = np.random.choice(len(TSTR), args.batch_size, replace=False)
             batch = [TSTR[seqid] for seqid in batch_id]
 
@@ -385,6 +386,9 @@ if __name__ == '__main__':
 
             it = it+1
 
+            # save
+            torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': it}, args.dataset + "/" + args.paramw)
+
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
@@ -400,9 +404,6 @@ if __name__ == '__main__':
                 trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
                 visualize(tsave, trace, lmbda, tsave_, trace_, tsave[gtid], lmbda_va_real, tsne, range(len(TSVA)), it)
 
-                # save
-                torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': it},
-                           args.dataset + "/" + args.paramw)
 
     # simulate for validation set
     func.jump_type = "simulate"
