@@ -74,13 +74,13 @@ class GCU(nn.Module):
 
         self.cur = nn.Sequential(MLP(dim_z,   dim_hidden, dim_hidden, num_hidden, activation), activation)
         self.nbr = nn.Sequential(MLP(dim_z*2, dim_hidden, dim_hidden, num_hidden, activation), activation)
-        self.out = nn.Linear(num_hidden*2, dim_z)
+        self.out = nn.Linear(dim_hidden*2, dim_z)
 
         nn.init.normal_(self.out.weight, mean=0, std=0.1)
         nn.init.constant_(self.out.bias, val=0)
 
         if aggregation is None:
-            self.aggregation = lambda xnbr: torch.zeros(xnbr.shape[::2]) if xnbr.shape[1] == 0 else xnbr.sum(dim=1)
+            self.aggregation = lambda vnbr: vnbr.sum(dim=1)
         else:
             self.aggregation = aggregation
 
@@ -88,7 +88,7 @@ class GCU(nn.Module):
         assert len(zcur.shape) == 2, 'xcur need to be 2 dimensional vector accessed by [seq_id, dim_id]'
         assert len(znbr.shape) == 3, 'xnbr need to be 3 dimensional vector accessed by [seq_id, nbr_id, dim_id]'
         vcur = self.cur(zcur)
-        vnbr = self.aggregation(self.nbr(torch.cat((zcur.repeat(1, znbr.shape[1], 1), znbr), dim=2)))
+        vnbr = torch.zeros(vcur.shape) if znbr.shape[1] == 0 else self.aggregation(self.nbr(torch.cat((zcur.repeat(1, znbr.shape[1], 1), znbr), dim=2)))
 
         return self.out(torch.cat((vcur, vnbr), dim=1))
 
@@ -99,6 +99,7 @@ class ODEFunc(nn.Module):
         super(ODEFunc, self).__init__()
 
         assert jump_type in ["simulate", "read", "none"], "invalide jump_type, must be one of [simulate, read, none]"
+
         self.dim_z = dim_z
         self.dim_k = dim_k
         self.F = GCU(dim_z, dim_hidden, num_hidden, activation, aggregation)
@@ -118,7 +119,7 @@ class ODEFunc(nn.Module):
         assert len(z.shape) == 3, 'z need to be 3 dimensional vector accessed by [seq_id, node_id, dim_id]'
 
         dz = torch.stack(tuple(self.F(z[:, nid, :], z[:, list(self.graph.neighbors(nid)), :]) for nid in self.graph.nodes()), dim=1)
-        dz -= torch.G(z) * z
+        dz -= self.G(z) * z
 
         return dz
 
@@ -158,7 +159,7 @@ class ODEFunc(nn.Module):
                 if idx > 0:
                     t = max(t1, torch.tensor(self.evnt_record[idx-1][0], dtype=torch.float64))
 
-        assert t != t1, "t can not equal t1"
+        assert t != t0, "t can not equal t0"
         return t
 
     def read_jump(self, t1, z1):
@@ -174,7 +175,7 @@ class ODEFunc(nn.Module):
                 t, sid, nid, eid = evnt
                 dN[sid, nid, eid] += 1
 
-            dz += torch.matmul(torch.stack(tuple(W_(z1) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze()
+            dz += torch.matmul(torch.stack(tuple(W_(z1) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
 
         return dz
 
@@ -285,7 +286,7 @@ def create_tsave(tmin, tmax, dt, batch_record, evnt_align=False):
     return torch.tensor(tsave), gtid, evnt_record, tsne
 
 
-def forward_pass(func, u0, tspan, dt, batch):
+def forward_pass(func, z0, tspan, dt, batch):
     # merge the sequences to create a sequence
     batch_record = sorted([(record[0],) + (sid,) + record[1:]
                            for sid in range(len(batch)) for record in batch[sid]])
@@ -295,7 +296,7 @@ def forward_pass(func, u0, tspan, dt, batch):
     func.evnt_record = evnt_record
 
     # forward pass
-    trace = odeint(func, u0.repeat(len(batch), 1, 1), tsave, method='jump_adams', rtol=1.0e-6, atol=1.0e-8)
+    trace = odeint(func, z0.repeat(len(batch), 1, 1), tsave, method='jump_adams', rtol=1.0e-6, atol=1.0e-8)
     lmbda = func.L(trace)
     loss = -(sum([torch.log(lmbda[record]) for record in tsne]) - (lmbda[gtid, :, :, :] * dt).sum())
 
@@ -365,7 +366,7 @@ if __name__ == '__main__':
     G = nx.Graph()
     G.add_node(0)
 
-    p, q, dt, tspan = 5, 1, 0.05, (0.0, 100.0)
+    dim_z, dim_k, dt, tspan = 5, 1, 0.05, (0.0, 100.0)
     path = "literature_review/MultiVariatePointProcess/experiments/data/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv")
     TSVA = read_timeseries(path + args.dataset + "_validation.csv")
@@ -380,22 +381,19 @@ if __name__ == '__main__':
 
     # initialize / load model
     torch.manual_seed(0)
-    func = ODEFunc(p, q, jump_type=args.jump_type, graph=G)
+    func = ODEFunc(dim_z, dim_k, dim_hidden=20, num_hidden=1, jump_type=args.jump_type, graph=G, activation=nn.CELU())
     if args.restart:
         checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
-        u0p = checkpoint['u0p']
-        u0q = checkpoint['u0q']
+        z0 = checkpoint['z0']
         it0 = checkpoint['it0']
     else:
-        u0p = torch.randn(G.number_of_nodes(), p, requires_grad=True)
-        u0q = torch.zeros(G.number_of_nodes(), q)
+        z0 = torch.randn(G.number_of_nodes(), dim_z, requires_grad=True)
         it0 = 0
 
     optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': u0p, 'lr': 1e-2},
-                            {'params': u0q}
-                            ], lr=1e-3, weight_decay=1e-4)
+                            {'params': z0, 'lr': 1e-2},
+                            ], lr=1e-2, weight_decay=1e-4)
 
     loss_meter = RunningAverageMeter()
 
@@ -412,7 +410,7 @@ if __name__ == '__main__':
             batch = [TSTR[seqid] for seqid in batch_id]
 
             # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, batch)
+            tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, z0, tspan, dt, batch)
             loss_meter.update(loss.item() / len(batch))
             print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg), flush=True)
 
@@ -426,12 +424,12 @@ if __name__ == '__main__':
             it = it+1
 
             # save
-            torch.save({'func_state_dict': func.state_dict(), 'u0p': u0p, 'u0q': u0q, 'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
+            torch.save({'func_state_dict': func.state_dict(), 'z0': z0, 'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
 
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, TSVA)
+                tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, z0, tspan, dt, TSVA)
                 print("iter: {}, validation loss: {:.4f}".format(it, loss.item()/len(TSVA)), flush=True)
 
                 # backward prop
@@ -445,11 +443,11 @@ if __name__ == '__main__':
 
 
     # simulate for validation set
-    func.jump_type = "simulate"
-    tsave, trace, lmbda, gitd, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, [[]]*len(TSVA))
-    visualize(tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSVA)), it, "simulate")
+    # func.jump_type = "simulate"
+    # tsave, trace, lmbda, gitd, tsne, loss = forward_pass(func, z0, tspan, dt, [[]]*len(TSVA))
+    # visualize(tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSVA)), it, "simulate")
 
     # computing testing error
     # func.jump_type = "read"
-    # tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((u0p, u0q), dim=1), tspan, dt, TSTE)
+    # tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, z0, tspan, dt, TSTE)
     # print("iter: {}, testing loss: {:.4f}".format(it, loss.item()/len(TSTE)))
