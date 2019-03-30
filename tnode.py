@@ -115,7 +115,7 @@ class ODEFunc(nn.Module):
             self.graph.add_node(0)
 
     def forward(self, t, z):
-        assert len(z.shape) == 2, 'z need to be 3 dimensional vector accessed by [seq_id, node_id, dim_id]'
+        assert len(z.shape) == 3, 'z need to be 3 dimensional vector accessed by [seq_id, node_id, dim_id]'
 
         dz = torch.stack(tuple(self.F(z[:, nid, :], z[:, list(self.graph.neighbors(nid)), :]) for nid in self.graph.nodes()), dim=1)
         dz -= torch.G(z) * z
@@ -135,10 +135,9 @@ class ODEFunc(nn.Module):
             dN[rd < lmbda_dt ** 2 / 2 + lmbda_dt * torch.exp(-lmbda_dt)] += 1
 
             dz += torch.matmul(torch.stack(tuple(W_(z1) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze()
-            if dN.sum() != 0:
-                for evnt in dN.nonzero():
-                    for _ in range(dN[tuple(evnt)].int()):
-                        sequence.append((t1,) + tuple(evnt))
+            for evnt in dN.nonzero():
+                for _ in range(dN[tuple(evnt)].int()):
+                    sequence.append((t1,) + tuple(evnt))
             self.evnt_record.extend(sequence)
 
         return dz
@@ -170,7 +169,7 @@ class ODEFunc(nn.Module):
             lid = bisect.bisect_left(self.evnt_record, (t1, -inf, -inf, -inf))
             rid = bisect.bisect_right(self.evnt_record, (t1, inf, inf, inf))
 
-            dN = torch.zeros(z1.shape[:2] + (self.dim_k,))
+            dN = torch.zeros(z1.shape[:-1] + (self.dim_k,))
             for evnt in self.evnt_record[lid:rid]:
                 t, sid, nid, eid = evnt
                 dN[sid, nid, eid] += 1
