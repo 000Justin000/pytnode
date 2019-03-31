@@ -394,7 +394,7 @@ if __name__ == '__main__':
 
     optimizer = optim.Adam([{'params': func.parameters()},
                             {'params': z0, 'lr': 1e-2},
-                            ], lr=1e-3, weight_decay=1e-4)
+                            ], lr=1e-4, weight_decay=1e-6)
 
     loss_meter = RunningAverageMeter()
 
