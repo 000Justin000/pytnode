@@ -30,7 +30,7 @@ args = parser.parse_args()
 class SoftPlus(nn.Module):
 
     def __init__(self, beta=1.0, threshold=20, epsilon=1.0e-15):
-        super(Exponential, self).__init__()
+        super(SoftPlus, self).__init__()
         self.Softplus = nn.Softplus(beta, threshold)
         self.epsilon = epsilon
 
