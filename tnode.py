@@ -26,15 +26,16 @@ parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
 args = parser.parse_args()
 
 
-# exponential activation function
-class Exponential(nn.Module):
+# SoftPlus activation function add epsilon
+class SoftPlus(nn.Module):
 
-    def __init__(self, beta=1.0):
+    def __init__(self, beta=1.0, threshold=20, epsilon=1.0e-15):
         super(Exponential, self).__init__()
-        self.beta = beta
+        self.Softplus = nn.Softplus(beta, threshold)
+        self.epsilon = epsilon
 
     def forward(self, x):
-        return torch.exp(self.beta * x)
+        return self.Softplus(x) + self.epsilon
 
 
 # multi-layer perceptron
@@ -105,7 +106,7 @@ class ODEFunc(nn.Module):
         self.F = GCU(dim_z, dim_hidden, num_hidden, activation, aggregation)
         self.G = nn.Sequential(MLP(dim_z, dim_z, dim_hidden, num_hidden, activation), nn.Softplus())
         self.W = nn.ModuleList([MLP(dim_z, dim_z, dim_hidden, num_hidden, activation) for _ in range(dim_k)])
-        self.L = nn.Sequential(MLP(dim_z, dim_k, dim_hidden, num_hidden, activation), Exponential())
+        self.L = nn.Sequential(MLP(dim_z, dim_k, dim_hidden, num_hidden, activation), SoftPlus())
         self.jump_type = jump_type
         self.evnt_record = [] if jump_type == "simulate" else evnt_record
         self.backtrace = []
@@ -300,6 +301,24 @@ def forward_pass(func, z0, tspan, dt, batch):
     lmbda = func.L(trace)
     loss = -(sum([torch.log(lmbda[record]) for record in tsne]) - (lmbda[gtid, :, :, :] * dt).sum())
 
+    torch.set_printoptions(threshold=500000)
+    print("==========")
+    print("lmbda before exponential: ", func.L[0](trace))
+    print("lmbda before exponential that turns into zero index: ", (lmbda == 0).nonzero())
+    print("lmbda before exponential that turns into zero: ", func.L[0](trace)[(lmbda == 0).nonzero()])
+    print("lmbda before exponential that turns into zero exponentialed: ", torch.exp(func.L[0](trace)[(lmbda == 0).nonzero()]))
+    print("lmbda after exponential: ", func.L[1](func.L[0](trace)))
+    print("######")
+    print(trace[:,36,0,:])
+    print(lmbda[1391,36,0,0])
+    print(func.L[0](trace)[1391,36,0,0])
+    print(func.L[1](func.L[0](trace))[1391,36,0,0])
+    print("lmbda: ", lmbda)
+    print("tensor equal?: ", torch.all(torch.eq(torch.exp(func.L[0](trace)), lmbda)))
+    print("first term", sum([torch.log(lmbda[record]) for record in tsne]))
+    print("second term: ", (lmbda[gtid, :, :, :] * dt).sum())
+    print("loss: ", loss)
+
     return tsave, trace, lmbda, gtid, tsne, loss
 
 
@@ -387,6 +406,7 @@ if __name__ == '__main__':
         func.load_state_dict(checkpoint['func_state_dict'])
         z0 = checkpoint['z0']
         it0 = checkpoint['it0']
+        # print(list(func.parameters()), z0)
     else:
         z0 = torch.randn(G.number_of_nodes(), dim_z, requires_grad=True)
         it0 = 0
@@ -402,29 +422,29 @@ if __name__ == '__main__':
     if func.jump_type == "read":
         while it < args.niters:
             # clear out gradients for variables
-            optimizer.zero_grad()
+#           optimizer.zero_grad()
 
-            # sample a mini-batch, create a grid based on that
-            torch.manual_seed(it)
-            batch_id = np.random.choice(len(TSTR), args.batch_size, replace=False)
-            batch = [TSTR[seqid] for seqid in batch_id]
+#           # sample a mini-batch, create a grid based on that
+#           torch.manual_seed(it)
+#           batch_id = np.random.choice(len(TSTR), args.batch_size, replace=False)
+#           batch = [TSTR[seqid] for seqid in batch_id]
 
-            # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, z0, tspan, dt, batch)
-            loss_meter.update(loss.item() / len(batch))
-            print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg), flush=True)
+#           # forward pass
+#           tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, z0, tspan, dt, batch)
+#           loss_meter.update(loss.item() / len(batch))
+#           print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg), flush=True)
 
-            # backward prop
-            func.backtrace.clear()
-            loss.backward()
+#           # backward prop
+#           func.backtrace.clear()
+#           loss.backward()
 
-            # step
-            optimizer.step()
+#           # step
+#           optimizer.step()
 
-            it = it+1
+#           it = it+1
 
-            # save
-            torch.save({'func_state_dict': func.state_dict(), 'z0': z0, 'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
+#           # save
+#           torch.save({'func_state_dict': func.state_dict(), 'z0': z0, 'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
 
             # validate and visualize
             if it % args.nsave == 0:
