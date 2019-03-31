@@ -389,7 +389,7 @@ if __name__ == '__main__':
         z0 = checkpoint['z0']
         it0 = checkpoint['it0']
     else:
-        z0 = torch.randn(G.number_of_nodes(), dim_z, requires_grad=True)
+        z0 = torch.zeros(G.number_of_nodes(), dim_z, requires_grad=True)
         it0 = 0
 
     optimizer = optim.Adam([{'params': func.parameters()},
@@ -444,9 +444,9 @@ if __name__ == '__main__':
 
 
     # simulate for validation set
-    # func.jump_type = "simulate"
-    # tsave, trace, lmbda, gitd, tsne, loss = forward_pass(func, z0, tspan, dt, [[]]*len(TSVA))
-    # visualize(tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSVA)), it, "simulate")
+    func.jump_type = "simulate"
+    tsave, trace, lmbda, gitd, tsne, loss = forward_pass(func, z0, tspan, dt, [[]]*len(TSVA))
+    visualize(tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSVA)), it, "simulate")
 
     # computing testing error
     # func.jump_type = "read"
