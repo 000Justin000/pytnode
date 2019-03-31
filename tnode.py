@@ -230,7 +230,7 @@ def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch
 
             # plot the state function
             for dat in list(trace[:, sid, nid, :].detach().numpy().T):
-                plt.plot(tsave.numpy(), dat, linewidth=0.7)
+                plt.plot(tsave.numpy(), dat, linewidth=0.5)
 
             # plot the state function (backward trace)
             if (tsave_ is not None) and (trace_ is not None):
@@ -238,9 +238,9 @@ def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch
                     plt.plot(tsave_.numpy(), dat, linewidth=0.3, linestyle="dashed", color="black")
 
             # plot the intensity function
-            plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=2.0)
+            plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=1.2)
             if (grid is not None) and (lmbda_real is not None):
-                plt.plot(grid.numpy(), lmbda_real[sid], linewidth=1.0)
+                plt.plot(grid.numpy(), lmbda_real[sid], linewidth=0.9)
 
             tsne_current = [record for record in tsne if (record[1] == sid and record[2] == nid)]
             evnt_time = np.array([tsave[record[0]] for record in tsne_current])
@@ -297,7 +297,7 @@ def forward_pass(func, z0, tspan, dt, batch):
     func.evnt_record = evnt_record
 
     # forward pass
-    trace = odeint(func, z0.repeat(len(batch), 1, 1), tsave, method='jump_adams', rtol=1.0e-5, atol=1.0e-7)
+    trace = odeint(func, z0.repeat(len(batch), 1, 1), tsave, method='jump_adams', rtol=1.0e-7, atol=1.0e-9)
     lmbda = func.L(trace)
     loss = -(sum([torch.log(lmbda[record]) for record in tsne]) - (lmbda[gtid, :, :, :] * dt).sum())
 
@@ -406,7 +406,7 @@ if __name__ == '__main__':
             optimizer.zero_grad()
 
             # sample a mini-batch, create a grid based on that
-            torch.manual_seed(it)
+            np.random.seed(it)
             batch_id = np.random.choice(len(TSTR), args.batch_size, replace=False)
             batch = [TSTR[seqid] for seqid in batch_id]
 
