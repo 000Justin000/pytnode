@@ -219,7 +219,8 @@ def read_timeseries(filename):
 
 
 def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch_id, itr, appendix=""):
-    for sid in range(trace.shape[1]):
+#   for sid in range(trace.shape[1]):
+    for sid in range(5):
         for nid in range(trace.shape[2]):
             fig = plt.figure(figsize=(6, 6), facecolor='white')
             axe = plt.gca()
@@ -367,7 +368,7 @@ if __name__ == '__main__':
     G = nx.Graph()
     G.add_node(0)
 
-    dim_z, dim_k, dt, tspan = 5, 1, 0.05, (0.0, 100.0)
+    dim_z, dim_k, dt, tspan = 2, 1, 0.05, (0.0, 100.0)
     path = "literature_review/MultiVariatePointProcess/experiments/data/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv")
     TSVA = read_timeseries(path + args.dataset + "_validation.csv")
@@ -393,8 +394,8 @@ if __name__ == '__main__':
         it0 = 0
 
     optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': z0, 'lr': 1e-2},
-                            ], lr=1e-4, weight_decay=1e-6)
+#                           {'params': z0, 'lr': 1e-2},
+                            ], lr=1e-3, weight_decay=1e-6)
 
     loss_meter = RunningAverageMeter()
 
@@ -424,9 +425,6 @@ if __name__ == '__main__':
 
             it = it+1
 
-            # save
-            torch.save({'func_state_dict': func.state_dict(), 'z0': z0, 'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
-
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
@@ -441,6 +439,9 @@ if __name__ == '__main__':
                 tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
                 trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
                 visualize(tsave, trace, lmbda, tsave_, trace_, tsave[gtid], lmbda_va_real, tsne, range(len(TSVA)), it)
+
+                # save
+                torch.save({'func_state_dict': func.state_dict(), 'z0': z0, 'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
 
 
     # simulate for validation set
