@@ -25,6 +25,7 @@ parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
 args = parser.parse_args()
 
+NVA = 5
 
 # SoftPlus activation function add epsilon
 class SoftPlus(nn.Module):
@@ -56,7 +57,7 @@ class MLP(nn.Module):
 
         for m in self.linears:
             nn.init.normal_(m.weight, mean=0, std=0.1)
-            nn.init.constant_(m.bias, val=0)
+            nn.init.normal_(m.bias, mean=0, std=0.1)
 
         self.activation = activation
 
@@ -78,7 +79,7 @@ class GCU(nn.Module):
         self.out = nn.Linear(dim_hidden*2, dim_z)
 
         nn.init.normal_(self.out.weight, mean=0, std=0.1)
-        nn.init.constant_(self.out.bias, val=0)
+        nn.init.normal_(self.out.bias, mean=0, std=0.1)
 
         if aggregation is None:
             self.aggregation = lambda vnbr: vnbr.sum(dim=1)
@@ -220,7 +221,7 @@ def read_timeseries(filename):
 
 def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch_id, itr, appendix=""):
 #   for sid in range(trace.shape[1]):
-    for sid in range(5):
+    for sid in range(NVA):
         for nid in range(trace.shape[2]):
             fig = plt.figure(figsize=(6, 6), facecolor='white')
             axe = plt.gca()
@@ -371,7 +372,7 @@ if __name__ == '__main__':
     dim_z, dim_k, dt, tspan = 2, 1, 0.05, (0.0, 100.0)
     path = "literature_review/MultiVariatePointProcess/experiments/data/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv")
-    TSVA = read_timeseries(path + args.dataset + "_validation.csv")
+    TSVA = read_timeseries(path + args.dataset + "_validation.csv")[0:NVA]
     TSTE = read_timeseries(path + args.dataset + "_testing.csv")
 
     if args.dataset == "exponential_hawkes":
