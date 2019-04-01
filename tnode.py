@@ -107,7 +107,7 @@ class ODEFunc(nn.Module):
         self.F = GCU(dim_z, dim_hidden, num_hidden, activation, aggregation)
         self.G = nn.Sequential(MLP(dim_z, dim_z, dim_hidden, num_hidden, activation), nn.Softplus())
         self.W = nn.ModuleList([MLP(dim_z, dim_z, dim_hidden, num_hidden, activation) for _ in range(dim_k)])
-        self.L = nn.Sequential(MLP(dim_z, dim_k, dim_hidden, num_hidden, activation), SoftPlus())
+        self.L = nn.Sequential(MLP(dim_z, dim_k, dim_hidden, num_hidden, activation), SoftPlus(3.0))
         self.jump_type = jump_type
         self.evnt_record = [] if jump_type == "simulate" else evnt_record
         self.backtrace = []
@@ -395,7 +395,7 @@ if __name__ == '__main__':
         it0 = 0
 
     optimizer = optim.Adam([{'params': func.parameters()},
-#                           {'params': z0, 'lr': 1e-2},
+                            {'params': z0},
                             ], lr=1e-3, weight_decay=1e-6)
 
     loss_meter = RunningAverageMeter()
