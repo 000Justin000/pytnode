@@ -100,7 +100,7 @@ class GCU(nn.Module):
         dc = self.out(torch.cat((v, v_), dim=1))
 
         # dc orthogonal to c
-        dc -= (dc*c).sum(dim=1, keepdim=True) / (c*c).sum(dim=1, keepdim=True) * c
+        dc = dc - (dc*c).sum(dim=1, keepdim=True) / (c*c).sum(dim=1, keepdim=True) * c
 
         return dc
 
