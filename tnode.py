@@ -393,7 +393,7 @@ if __name__ == '__main__':
         checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
         c0 = checkpoint['c0']
-        h0 = checkpoint['h0']
+        h0 = torch.zeros(G.number_of_nodes(), dim_h)
         it0 = checkpoint['it0']
     else:
         c0 = torch.randn(G.number_of_nodes(), dim_c, requires_grad=True)
@@ -428,6 +428,7 @@ if __name__ == '__main__':
             loss.backward()
 
             # step
+            print(func.W[0].linears[0].bias, func.W[0].linears[0].bias.grad)
             optimizer.step()
 
             it = it+1
