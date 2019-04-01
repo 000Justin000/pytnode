@@ -457,6 +457,6 @@ if __name__ == '__main__':
     visualize(tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSVA)), it, "simulate")
 
     # computing testing error
-    # func.jump_type = "read"
-    # tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, z0, tspan, dt, TSTE)
-    # print("iter: {}, testing loss: {:.4f}".format(it, loss.item()/len(TSTE)))
+    func.jump_type = "read"
+    tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=1), tspan, dt, TSTE)
+    print("iter: {}, testing loss: {:.4f}".format(it, loss.item()/len(TSTE)))
