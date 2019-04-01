@@ -151,7 +151,7 @@ class ODEFunc(nn.Module):
             dN[rd < lmbda_dt ** 2 / 2] += 1
             dN[rd < lmbda_dt ** 2 / 2 + lmbda_dt * torch.exp(-lmbda_dt)] += 1
 
-            dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z1) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
+            dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z1[:, :, :self.dim_c]) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
             for evnt in dN.nonzero():
                 for _ in range(dN[tuple(evnt)].int()):
                     sequence.append((t1,) + tuple(evnt))
@@ -191,7 +191,7 @@ class ODEFunc(nn.Module):
                 t, sid, nid, eid = evnt
                 dN[sid, nid, eid] += 1
 
-            dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z1) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
+            dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z1[:, :, :self.dim_c]) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
 
         return dz
 
@@ -392,14 +392,16 @@ if __name__ == '__main__':
     if args.restart:
         checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
-        z0 = checkpoint['z0']
+        c0 = checkpoint['c0']
+        h0 = checkpoint['h0']
         it0 = checkpoint['it0']
     else:
-        z0 = torch.zeros(G.number_of_nodes(), dim_c+dim_h, requires_grad=True)
+        c0 = torch.randn(G.number_of_nodes(), dim_c, requires_grad=True)
+        h0 = torch.zeros(G.number_of_nodes(), dim_h)
         it0 = 0
 
     optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': z0},
+                            {'params': c0},
                             ], lr=1e-3, weight_decay=1e-6)
 
     loss_meter = RunningAverageMeter()
@@ -417,7 +419,7 @@ if __name__ == '__main__':
             batch = [TSTR[seqid] for seqid in batch_id]
 
             # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, z0, tspan, dt, batch)
+            tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=1), tspan, dt, batch)
             loss_meter.update(loss.item() / len(batch))
             print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg), flush=True)
 
@@ -433,7 +435,7 @@ if __name__ == '__main__':
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, z0, tspan, dt, TSVA)
+                tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=1), tspan, dt, TSVA)
                 print("iter: {}, validation loss: {:.4f}".format(it, loss.item()/len(TSVA)), flush=True)
 
                 # backward prop
@@ -446,12 +448,12 @@ if __name__ == '__main__':
                 visualize(tsave, trace, lmbda, tsave_, trace_, tsave[gtid], lmbda_va_real, tsne, range(len(TSVA)), it)
 
                 # save
-                torch.save({'func_state_dict': func.state_dict(), 'z0': z0, 'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
+                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
 
 
     # simulate for validation set
     func.jump_type = "simulate"
-    tsave, trace, lmbda, gitd, tsne, loss = forward_pass(func, z0, tspan, dt, [[]]*len(TSVA))
+    tsave, trace, lmbda, gitd, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=1), tspan, dt, [[]]*len(TSVA))
     visualize(tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSVA)), it, "simulate")
 
     # computing testing error
