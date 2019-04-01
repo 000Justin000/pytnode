@@ -18,6 +18,7 @@ parser.add_argument('--paramr', type=str, default='params.pth')
 parser.add_argument('--paramw', type=str, default='params.pth')
 parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--nsave', type=int, default=10)
+parser.add_argument('--num_validation', type=int, default=100)
 parser.add_argument('--dataset', type=str, default='exponential_hawkes')
 parser.add_argument('--suffix', type=str, default='')
 parser.set_defaults(restart=False, evnt_align=False)
@@ -25,7 +26,6 @@ parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
 args = parser.parse_args()
 
-NVA = 5
 
 # SoftPlus activation function add epsilon
 class SoftPlus(nn.Module):
@@ -71,12 +71,14 @@ class MLP(nn.Module):
 # graph convolution unit
 class GCU(nn.Module):
 
-    def __init__(self, dim_z, dim_hidden, num_hidden, activation, aggregation=None):
+    def __init__(self, dim_c, dim_h, dim_hidden, num_hidden, activation, aggregation=None):
         super(GCU, self).__init__()
 
-        self.cur = nn.Sequential(MLP(dim_z,   dim_hidden, dim_hidden, num_hidden, activation), activation)
-        self.nbr = nn.Sequential(MLP(dim_z*2, dim_hidden, dim_hidden, num_hidden, activation), activation)
-        self.out = nn.Linear(dim_hidden*2, dim_z)
+        self.dim_c = dim_c
+        self.dim_h = dim_h
+        self.cur = nn.Sequential(MLP(dim_c+dim_h,   dim_hidden, dim_hidden, num_hidden, activation), activation)
+        self.nbr = nn.Sequential(MLP(dim_c+dim_h*2, dim_hidden, dim_hidden, num_hidden, activation), activation)
+        self.out = nn.Linear(dim_hidden*2, dim_c)
 
         nn.init.normal_(self.out.weight, mean=0, std=0.1)
         nn.init.uniform_(self.out.bias, a=-0.1, b=0.1)
@@ -86,28 +88,37 @@ class GCU(nn.Module):
         else:
             self.aggregation = aggregation
 
-    def forward(self, zcur, znbr):
-        assert len(zcur.shape) == 2, 'xcur need to be 2 dimensional vector accessed by [seq_id, dim_id]'
-        assert len(znbr.shape) == 3, 'xnbr need to be 3 dimensional vector accessed by [seq_id, nbr_id, dim_id]'
-        vcur = self.cur(zcur)
-        vnbr = torch.zeros(vcur.shape) if znbr.shape[1] == 0 else self.aggregation(self.nbr(torch.cat((zcur.repeat(1, znbr.shape[1], 1), znbr), dim=2)))
+    def forward(self, z, h_):
+        assert len(z.shape) == 2,  'z need to be 2 dimensional vector accessed by [seq_id, dim_id]'
+        assert len(h_.shape) == 3, 'h_ need to be 3 dimensional vector accessed by [seq_id, nbr_id, dim_id]'
 
-        return self.out(torch.cat((vcur, vnbr), dim=1))
+        c = z[:, :self.dim_c]
+
+        v = self.cur(z)
+        v_ = torch.zeros(v.shape) if h_.shape[1] == 0 else self.aggregation(self.nbr(torch.cat((z.unsqueeze(1).repeat(1, h_.shape[1], 1), h_), dim=2)))
+
+        dc = self.out(torch.cat((v, v_), dim=1))
+
+        # dc orthogonal to c
+        dc -= (dc*c).sum(dim=1, keepdim=True) / (c*c).sum(dim=1, keepdim=True) * c
+
+        return dc
 
 
 class ODEFunc(nn.Module):
 
-    def __init__(self, dim_z, dim_k, dim_hidden=20, num_hidden=0, jump_type="none", evnt_record=None, graph=None, activation=nn.CELU(), aggregation=None):
+    def __init__(self, dim_c, dim_h, dim_k, dim_hidden=20, num_hidden=0, jump_type="none", evnt_record=None, graph=None, activation=nn.CELU(), aggregation=None):
         super(ODEFunc, self).__init__()
 
         assert jump_type in ["simulate", "read", "none"], "invalide jump_type, must be one of [simulate, read, none]"
 
-        self.dim_z = dim_z
+        self.dim_c = dim_c
+        self.dim_h = dim_h
         self.dim_k = dim_k
-        self.F = GCU(dim_z, dim_hidden, num_hidden, activation, aggregation)
-        self.G = nn.Sequential(MLP(dim_z, dim_z, dim_hidden, num_hidden, activation), nn.Softplus())
-        self.W = nn.ModuleList([MLP(dim_z, dim_z, dim_hidden, num_hidden, activation) for _ in range(dim_k)])
-        self.L = nn.Sequential(MLP(dim_z, dim_k, dim_hidden, num_hidden, activation), SoftPlus(3.0))
+        self.F = GCU(dim_c, dim_h, dim_hidden, num_hidden, activation, aggregation)
+        self.G = nn.Sequential(MLP(dim_c, dim_h, dim_hidden, num_hidden, activation), nn.Softplus())
+        self.W = nn.ModuleList([MLP(dim_c, dim_h, dim_hidden, num_hidden, activation) for _ in range(dim_k)])
+        self.L = nn.Sequential(MLP(dim_c+dim_h, dim_k, dim_hidden, num_hidden, activation), SoftPlus())
         self.jump_type = jump_type
         self.evnt_record = [] if jump_type == "simulate" else evnt_record
         self.backtrace = []
@@ -120,10 +131,13 @@ class ODEFunc(nn.Module):
     def forward(self, t, z):
         assert len(z.shape) == 3, 'z need to be 3 dimensional vector accessed by [seq_id, node_id, dim_id]'
 
-        dz = torch.stack(tuple(self.F(z[:, nid, :], z[:, list(self.graph.neighbors(nid)), :]) for nid in self.graph.nodes()), dim=1)
-        dz -= self.G(z) * z
+        c = z[:, :, :self.dim_c]
+        h = z[:, :, self.dim_c:]
 
-        return dz
+        dc = torch.stack(tuple(self.F(z[:, nid, :], h[:, list(self.graph.neighbors(nid)), :]) for nid in self.graph.nodes()), dim=1)
+        dh = -self.G(c) * h
+
+        return torch.cat((dc, dh), dim=2)
 
     def simulate_jump(self, t0, t1, z0, z1):
         assert t0 < t1
@@ -137,7 +151,7 @@ class ODEFunc(nn.Module):
             dN[rd < lmbda_dt ** 2 / 2] += 1
             dN[rd < lmbda_dt ** 2 / 2 + lmbda_dt * torch.exp(-lmbda_dt)] += 1
 
-            dz += torch.matmul(torch.stack(tuple(W_(z1) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze()
+            dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z1) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
             for evnt in dN.nonzero():
                 for _ in range(dN[tuple(evnt)].int()):
                     sequence.append((t1,) + tuple(evnt))
@@ -177,7 +191,7 @@ class ODEFunc(nn.Module):
                 t, sid, nid, eid = evnt
                 dN[sid, nid, eid] += 1
 
-            dz += torch.matmul(torch.stack(tuple(W_(z1) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
+            dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z1) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
 
         return dz
 
@@ -204,24 +218,14 @@ class RunningAverageMeter(object):
         self.val = val
 
 
-def read_timeseries(dat, num_vertices=1):
-    timeseries = []
-    for u in range(num_vertices):
-        for t in dat[0][u]:
-            timeseries.append((t, u, 0))
-
-    return [sorted(timeseries), sorted(timeseries), sorted(timeseries)]
-
-
-def read_timeseries(filename):
+def read_timeseries(filename, num_seqs=sys.maxsize):
     with open(filename) as f:
-        seqs = f.readlines()
+        seqs = f.readlines()[:num_seqs]
     return [[(float(t), vid, 0) for vid, vts in enumerate(seq.split(";")) for t in vts.split()] for seq in seqs]
 
 
 def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch_id, itr, appendix=""):
-#   for sid in range(trace.shape[1]):
-    for sid in range(NVA):
+    for sid in range(trace.shape[1]):
         for nid in range(trace.shape[2]):
             fig = plt.figure(figsize=(6, 6), facecolor='white')
             axe = plt.gca()
@@ -369,10 +373,10 @@ if __name__ == '__main__':
     G = nx.Graph()
     G.add_node(0)
 
-    dim_z, dim_k, dt, tspan = 2, 1, 0.05, (0.0, 100.0)
+    dim_c, dim_h, dim_k, dt, tspan = 2, 2, 1, 0.05, (0.0, 100.0)
     path = "literature_review/MultiVariatePointProcess/experiments/data/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv")
-    TSVA = read_timeseries(path + args.dataset + "_validation.csv")[0:NVA]
+    TSVA = read_timeseries(path + args.dataset + "_validation.csv", args.num_validation)
     TSTE = read_timeseries(path + args.dataset + "_testing.csv")
 
     if args.dataset == "exponential_hawkes":
@@ -384,14 +388,14 @@ if __name__ == '__main__':
 
     # initialize / load model
     torch.manual_seed(0)
-    func = ODEFunc(dim_z, dim_k, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, graph=G, activation=nn.CELU())
+    func = ODEFunc(dim_c, dim_h, dim_k, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, graph=G, activation=nn.CELU())
     if args.restart:
         checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
         z0 = checkpoint['z0']
         it0 = checkpoint['it0']
     else:
-        z0 = torch.zeros(G.number_of_nodes(), dim_z, requires_grad=True)
+        z0 = torch.zeros(G.number_of_nodes(), dim_c+dim_h, requires_grad=True)
         it0 = 0
 
     optimizer = optim.Adam([{'params': func.parameters()},
