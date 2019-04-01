@@ -57,7 +57,7 @@ class MLP(nn.Module):
 
         for m in self.linears:
             nn.init.normal_(m.weight, mean=0, std=0.1)
-            nn.init.normal_(m.bias, mean=0, std=0.1)
+            nn.init.uniform_(m.bias, a=-0.1, b=0.1)
 
         self.activation = activation
 
@@ -79,7 +79,7 @@ class GCU(nn.Module):
         self.out = nn.Linear(dim_hidden*2, dim_z)
 
         nn.init.normal_(self.out.weight, mean=0, std=0.1)
-        nn.init.normal_(self.out.bias, mean=0, std=0.1)
+        nn.init.uniform_(self.out.bias, a=-0.1, b=0.1)
 
         if aggregation is None:
             self.aggregation = lambda vnbr: vnbr.sum(dim=1)
