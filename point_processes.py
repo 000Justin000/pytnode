@@ -162,17 +162,17 @@ def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch
 
             # plot the state function
             for dat in list(trace[:, sid, nid, :].detach().numpy().T):
-                plt.plot(tsave.numpy(), dat, linewidth=0.5)
+                plt.plot(tsave.numpy(), dat, linewidth=0.3)
 
             # plot the state function (backward trace)
             if (tsave_ is not None) and (trace_ is not None):
                 for dat in list(trace_[:, sid, nid, :].detach().numpy().T):
-                    plt.plot(tsave_.numpy(), dat, linewidth=0.3, linestyle="dashed", color="black")
+                    plt.plot(tsave_.numpy(), dat, linewidth=0.2, linestyle="densely dotted", color="black")
 
             # plot the intensity function
-            plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=1.2, color="red")
             if (grid is not None) and (lmbda_real is not None):
-                plt.plot(grid.numpy(), lmbda_real[sid], linewidth=0.9, color="gray")
+                plt.plot(grid.numpy(), lmbda_real[sid], linewidth=1.0, color="gray")
+            plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=0.7, color="red")
 
             tsne_current = [record for record in tsne if (record[1] == sid and record[2] == nid)]
             evnt_time = np.array([tsave[record[0]] for record in tsne_current])
@@ -299,7 +299,7 @@ if __name__ == '__main__':
     G = nx.Graph()
     G.add_node(0)
 
-    dim_c, dim_h, dim_k, dt, tspan = 3, 2, 1, 0.05, (-10.0, 90.0)
+    dim_c, dim_h, dim_k, dt, tspan = 3, 2, 1, 0.05, (0.0, 100.0)
     path = "literature_review/MultiVariatePointProcess/experiments/data/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv")
     TSVA = read_timeseries(path + args.dataset + "_validation.csv", args.num_validation)
@@ -328,7 +328,7 @@ if __name__ == '__main__':
 
     optimizer = optim.Adam([{'params': func.parameters()},
                             {'params': c0},
-                            ], lr=1e-3, weight_decay=1e-6)
+                            ], lr=1e-3, weight_decay=1e-5)
 
     loss_meter = RunningAverageMeter()
 
