@@ -428,7 +428,6 @@ if __name__ == '__main__':
             loss.backward()
 
             # step
-            print(func.W[0].linears[0].bias, func.W[0].linears[0].bias.grad)
             optimizer.step()
 
             it = it+1
