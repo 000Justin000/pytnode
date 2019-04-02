@@ -170,9 +170,9 @@ def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch
                     plt.plot(tsave_.numpy(), dat, linewidth=0.3, linestyle="dashed", color="black")
 
             # plot the intensity function
-            plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=1.2)
+            plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=1.2, color="red")
             if (grid is not None) and (lmbda_real is not None):
-                plt.plot(grid.numpy(), lmbda_real[sid], linewidth=0.9)
+                plt.plot(grid.numpy(), lmbda_real[sid], linewidth=0.9, color="gray")
 
             tsne_current = [record for record in tsne if (record[1] == sid and record[2] == nid)]
             evnt_time = np.array([tsave[record[0]] for record in tsne_current])

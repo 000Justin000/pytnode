@@ -72,3 +72,13 @@ class GCU(nn.Module):
         dc = self.out(torch.cat((v, v_), dim=1))
 
         return dc
+
+
+# RNN
+class RNN(nn.Module):
+
+    def __init__(self, dim_in, dim_out, dim_hidden):
+        super(RNN, self).__init__()
+
+        self.i2h = nn.Linear(dim_in+dim_hidden, dim_hidden)
+        self.h2o = nn.Linear(dim_hidden, dim_out)
