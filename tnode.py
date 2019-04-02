@@ -4,12 +4,12 @@ import argparse
 import numpy as np
 import bisect
 import matplotlib.pyplot as plt
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import networkx as nx
 from torchdiffeq import odeint_adjoint as odeint
+from utils import SoftPlus, MLP, GCU
 
 parser = argparse.ArgumentParser('tnode')
 parser.add_argument('--niters', type=int, default=100)
@@ -26,83 +26,6 @@ parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
 args = parser.parse_args()
 
-
-# SoftPlus activation function add epsilon
-class SoftPlus(nn.Module):
-
-    def __init__(self, beta=1.0, threshold=20, epsilon=1.0e-15):
-        super(SoftPlus, self).__init__()
-        self.Softplus = nn.Softplus(beta, threshold)
-        self.epsilon = epsilon
-
-    def forward(self, x):
-        return self.Softplus(x) + self.epsilon
-
-
-# multi-layer perceptron
-class MLP(nn.Module):
-
-    def __init__(self, dim_in, dim_out, dim_hidden, num_hidden, activation):
-        super(MLP, self).__init__()
-
-        if num_hidden == 0:
-            self.linears = nn.ModuleList([nn.Linear(dim_in, dim_out)])
-        elif num_hidden >= 1:
-            self.linears = nn.ModuleList()
-            self.linears.append(nn.Linear(dim_in, dim_hidden))
-            self.linears.extend([nn.Linear(dim_hidden, dim_hidden) for _ in range(num_hidden-1)])
-            self.linears.append(nn.Linear(dim_hidden, dim_out))
-        else:
-            raise Exception('number of hidden layers must be positive')
-
-        for m in self.linears:
-            nn.init.normal_(m.weight, mean=0, std=0.1)
-            nn.init.uniform_(m.bias, a=-0.1, b=0.1)
-
-        self.activation = activation
-
-    def forward(self, x):
-        for m in self.linears[:-1]:
-            x = self.activation(m(x))
-
-        return self.linears[-1](x)
-
-
-# graph convolution unit
-class GCU(nn.Module):
-
-    def __init__(self, dim_c, dim_h, dim_hidden, num_hidden, activation, aggregation=None):
-        super(GCU, self).__init__()
-
-        self.dim_c = dim_c
-        self.dim_h = dim_h
-        self.cur = nn.Sequential(MLP(dim_c+dim_h,   dim_hidden, dim_hidden, num_hidden, activation), activation)
-        self.nbr = nn.Sequential(MLP(dim_c+dim_h*2, dim_hidden, dim_hidden, num_hidden, activation), activation)
-        self.out = nn.Linear(dim_hidden*2, dim_c)
-
-        nn.init.normal_(self.out.weight, mean=0, std=0.1)
-        nn.init.uniform_(self.out.bias, a=-0.1, b=0.1)
-
-        if aggregation is None:
-            self.aggregation = lambda vnbr: vnbr.sum(dim=1)
-        else:
-            self.aggregation = aggregation
-
-    def forward(self, z, h_):
-        assert len(z.shape) == 2,  'z need to be 2 dimensional vector accessed by [seq_id, dim_id]'
-        assert len(h_.shape) == 3, 'h_ need to be 3 dimensional vector accessed by [seq_id, nbr_id, dim_id]'
-
-        c = z[:, :self.dim_c]
-
-        v = self.cur(z)
-        v_ = torch.zeros(v.shape) if h_.shape[1] == 0 else self.aggregation(self.nbr(torch.cat((z.unsqueeze(1).repeat(1, h_.shape[1], 1), h_), dim=2)))
-
-        dc = self.out(torch.cat((v, v_), dim=1))
-
-        # dc orthogonal to c
-        dc = dc - (dc*c).sum(dim=1, keepdim=True) / (c*c).sum(dim=1, keepdim=True) * c
-
-        return dc
 
 
 class ODEFunc(nn.Module):
@@ -134,7 +57,11 @@ class ODEFunc(nn.Module):
         c = z[:, :, :self.dim_c]
         h = z[:, :, self.dim_c:]
 
-        dc = torch.stack(tuple(self.F(z[:, nid, :], h[:, list(self.graph.neighbors(nid)), :]) for nid in self.graph.nodes()), dim=1)
+        dc = torch.stack(tuple(self.F(z[:, nid, :], z[:, list(self.graph.neighbors(nid)), :]) for nid in self.graph.nodes()), dim=1)
+
+        # orthogonalize dc w.r.t. to c
+        dc = dc - (dc*c).sum(dim=2, keepdim=True) / (c*c).sum(dim=2, keepdim=True) * c
+
         dh = -self.G(c) * h
 
         return torch.cat((dc, dh), dim=2)

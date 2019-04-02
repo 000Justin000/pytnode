@@ -61,8 +61,10 @@ class COFunc(nn.Module):
 
 
 def visualize(trace, appendix=""):
-    for sid in range(trace.shape[1]):
-        for tid in range(trace.shape[0]):
+#   for sid in range(trace.shape[1]):
+#       for tid in range(trace.shape[0]):
+    for sid in range(5):
+        for tid in range(0, trace.shape[0], 5):
             fig = plt.figure(figsize=(6, 6), facecolor='white')
             axe = plt.gca()
             axe.set_title('Coupled Oscillators')
@@ -85,14 +87,16 @@ if __name__ == '__main__':
     G = nx.Graph()
     G.add_edge(0, 1)
     G.add_edge(1, 2)
+    G.add_edge(0, 2)
 
-    nseq, p, dt, tspan = 5, 2, 0.05, (0.0, 100.0)
+    nseq, p, dt, tspan = 100, 2, 0.05, (-20.0, 100.0)
 
     # initialize / load model
     torch.manual_seed(1)
     func = COFunc(p, graph=G)
 
-    v0 = torch.zeros(nseq, G.number_of_nodes(), p)
+    v0 = torch.randn(nseq, G.number_of_nodes(), p)
+    v0 = v0 - v0.mean(dim=1, keepdim=True)
     r0 = torch.randn(nseq, G.number_of_nodes(), p)
 
     tsave = torch.arange(tspan[0], tspan[1], dt)
