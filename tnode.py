@@ -129,8 +129,6 @@ class ODEFunc(nn.Module):
             self.graph.add_node(0)
 
     def forward(self, t, z):
-        print(t)
-
         assert len(z.shape) == 3, 'z need to be 3 dimensional vector accessed by [seq_id, node_id, dim_id]'
 
         c = z[:, :, :self.dim_c]
