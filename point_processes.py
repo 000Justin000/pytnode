@@ -299,7 +299,7 @@ if __name__ == '__main__':
     G = nx.Graph()
     G.add_node(0)
 
-    dim_c, dim_h, dim_k, dt, tspan = 2, 2, 1, 0.05, (0.0, 100.0)
+    dim_c, dim_h, dim_k, dt, tspan = 3, 2, 1, 0.05, (-10.0, 90.0)
     path = "literature_review/MultiVariatePointProcess/experiments/data/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv")
     TSVA = read_timeseries(path + args.dataset + "_validation.csv", args.num_validation)
