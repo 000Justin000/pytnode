@@ -27,7 +27,6 @@ parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
 args = parser.parse_args()
 
 
-
 class ODEFunc(nn.Module):
 
     def __init__(self, dim_c, dim_h, dim_k, dim_hidden=20, num_hidden=0, jump_type="none", evnt_record=None, graph=None, activation=nn.CELU(), aggregation=None):
