@@ -303,7 +303,7 @@ def forward_pass(func, z0, tspan, dt, batch):
     func.evnt_record = evnt_record
 
     # forward pass
-    trace = odeint(func, z0.repeat(len(batch), 1, 1), tsave, method='jump_adams', rtol=1.0e-7, atol=1.0e-9)
+    trace = odeint(func, z0.repeat(len(batch), 1, 1), tsave, method='jump_adams', rtol=1.0e-6, atol=1.0e-8)
     lmbda = func.L(trace)
     loss = -(sum([torch.log(lmbda[record]) for record in tsne]) - (lmbda[gtid, :, :, :] * dt).sum())
 
