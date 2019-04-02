@@ -393,7 +393,7 @@ if __name__ == '__main__':
         checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
         c0 = checkpoint['c0']
-        h0 = torch.zeros(G.number_of_nodes(), dim_h)
+        h0 = checkpoint['h0']
         it0 = checkpoint['it0']
     else:
         c0 = torch.randn(G.number_of_nodes(), dim_c, requires_grad=True)
@@ -449,7 +449,7 @@ if __name__ == '__main__':
                 visualize(tsave, trace, lmbda, tsave_, trace_, tsave[gtid], lmbda_va_real, tsne, range(len(TSVA)), it)
 
                 # save
-                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
+                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
 
 
     # simulate for validation set
