@@ -93,6 +93,3 @@ class RNN(nn.Module):
             hh.append(self.i2h(combined))
 
         return self.h2o(hh[1:])
-
-
-
