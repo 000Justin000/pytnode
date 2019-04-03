@@ -92,7 +92,7 @@ class ODEFunc(nn.Module):
         dz = torch.stack(tuple(self.F(z[:, nid, :], z[:, list(self.graph.neighbors(nid)), :]) for nid in self.graph.nodes()), dim=1)
 
         # orthogonalize dc w.r.t. to c
-        dz = dz - (dz*z).sum(dim=2, keepdim=True) / (z*z).sum(dim=2, keepdim=True) * z
+        # dz = dz - (dz*z).sum(dim=2, keepdim=True) / (z*z).sum(dim=2, keepdim=True) * z
 
         return dz
 
