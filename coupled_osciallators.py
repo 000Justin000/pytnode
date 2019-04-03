@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.optim as optim
 import networkx as nx
 from torchdiffeq import odeint
+from utils import MLP, GCU, RNN
 
 
 class COFunc(nn.Module):
@@ -60,6 +61,29 @@ class COFunc(nn.Module):
         return torch.cat((dv, dr), dim=2)
 
 
+class ODEFunc(nn.Module):
+
+    def __init__(self, dim_z, dim_hidden=20, num_hidden=0, activation=nn.CELU(), graph=None, aggregation=None):
+        super(ODEFunc, self).__init__()
+
+        self.F = GCU(dim_z, 0, dim_hidden, num_hidden, activation, aggregation)
+        if graph:
+            self.graph = graph
+        else:
+            self.graph = nx.Graph()
+            self.graph.add_node(0)
+
+    def forward(self, t, z):
+        assert len(z.shape) == 3, 'z need to be 3 dimensional vector accessed by [seq_id, node_id, dim_id]'
+
+        dz = torch.stack(tuple(self.F(z[:, nid, :], z[:, list(self.graph.neighbors(nid)), :]) for nid in self.graph.nodes()), dim=1)
+
+        # orthogonalize dc w.r.t. to c
+        dz = dz - (dz*z).sum(dim=2, keepdim=True) / (z*z).sum(dim=2, keepdim=True) * z
+
+        return dz
+
+
 def visualize(trace, appendix=""):
     for sid in range(trace.shape[1]):
         for tid in range(trace.shape[0]):
@@ -87,16 +111,29 @@ if __name__ == '__main__':
     G.add_edge(1, 2)
     G.add_edge(0, 2)
 
-    nseq, p, dt, tspan = 500, 2, 0.05, (-20.0, 100.0)
+    nseq, dim_p, dim_c, dim_hidden, dt, tspan = 500, 2, 5, 20, 0.05, (-20.0, 100.0)
 
     # initialize / load model
-    torch.manual_seed(1)
-    func = COFunc(p, graph=G)
+    torch.manual_seed(0)
+    func = COFunc(dim_p, graph=G)
 
-    v0 = torch.randn(nseq, G.number_of_nodes(), p)
+    v0 = torch.randn(nseq, G.number_of_nodes(), dim_p)
     v0 = v0 - v0.mean(dim=1, keepdim=True)
-    r0 = torch.randn(nseq, G.number_of_nodes(), p)
+    r0 = torch.randn(nseq, G.number_of_nodes(), dim_p)
 
     tsave = torch.arange(tspan[0], tspan[1], dt)
 
-    trace = odeint(func, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
+    trajs = odeint(func, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
+    trajs_tr, trajs_va, trajs_te = trajs[:, :300, :, :], trajs[:, 300:400, :, :], trajs[:, 400:, :, :]
+
+    # define encoder and decoder networks
+    enc = RNN(dim_p, dim_c*2, dim_hidden, 0, nn.Tanh())
+    dec = MLP(dim_c, dim_p, dim_hidden, 1, nn.CELU())
+
+    # compute the encoding using trajectory upto t=0.0
+    out = enc(trajs_tr[:400, :, :, 2:4])
+    c0_mean, c0_logvar = out[-1, :, :, :dim_c], out[-1, :, :, dim_c:]
+    epsilon = torch.randn(c0_mean.shape)
+
+
+

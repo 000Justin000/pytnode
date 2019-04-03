@@ -16,7 +16,7 @@ class SoftPlus(nn.Module):
 # multi-layer perceptron
 class MLP(nn.Module):
 
-    def __init__(self, dim_in, dim_out, dim_hidden, num_hidden, activation):
+    def __init__(self, dim_in, dim_out, dim_hidden=20, num_hidden=0, activation=nn.CELU()):
         super(MLP, self).__init__()
 
         if num_hidden == 0:
@@ -45,11 +45,9 @@ class MLP(nn.Module):
 # graph convolution unit
 class GCU(nn.Module):
 
-    def __init__(self, dim_c, dim_h, dim_hidden, num_hidden, activation, aggregation=None):
+    def __init__(self, dim_c, dim_h=0, dim_hidden=20, num_hidden=0, activation=nn.CELU(), aggregation=None):
         super(GCU, self).__init__()
 
-        self.dim_c = dim_c
-        self.dim_h = dim_h
         self.cur = nn.Sequential(MLP((dim_c+dim_h),   dim_hidden, dim_hidden, num_hidden, activation), activation)
         self.nbr = nn.Sequential(MLP((dim_c+dim_h)*2, dim_hidden, dim_hidden, num_hidden, activation), activation)
         self.out = nn.Linear(dim_hidden*2, dim_c)
@@ -74,7 +72,7 @@ class GCU(nn.Module):
         return dc
 
 
-# RNN
+# recurrent neural network
 class RNN(nn.Module):
 
     def __init__(self, dim_in, dim_out, dim_hidden, num_hidden, activation):
@@ -83,6 +81,7 @@ class RNN(nn.Module):
         self.dim_hidden = dim_hidden
         self.i2h = MLP(dim_in+dim_hidden, dim_hidden, dim_hidden, num_hidden, activation)
         self.h2o = MLP(dim_hidden, dim_out, dim_hidden, num_hidden, activation)
+        self.activation = activation
 
     def forward(self, x):
         assert len(x.shape) > 2,  'z need to be at least a 2 dimensional vector accessed by [tid ... dim_id]'
@@ -90,6 +89,6 @@ class RNN(nn.Module):
         hh = [torch.zeros(x.shape[1:-1] + (self.dim_hidden,))]
         for i in range(x.shape[0]):
             combined = torch.cat((x[i], hh[-1]), dim=-1)
-            hh.append(self.i2h(combined))
+            hh.append(self.activation(self.i2h(combined)))
 
-        return self.h2o(hh[1:])
+        return self.h2o(torch.stack(tuple(hh[1:])))

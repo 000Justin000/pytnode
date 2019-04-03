@@ -27,12 +27,10 @@ parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
 args = parser.parse_args()
 
 
-class ODEFunc(nn.Module):
+class ODEJumpFunc(nn.Module):
 
-    def __init__(self, dim_c, dim_h, dim_k, dim_hidden=20, num_hidden=0, jump_type="none", evnt_record=None, graph=None, activation=nn.CELU(), aggregation=None):
-        super(ODEFunc, self).__init__()
-
-        assert jump_type in ["simulate", "read", "none"], "invalide jump_type, must be one of [simulate, read, none]"
+    def __init__(self, dim_c, dim_h, dim_k, dim_hidden=20, num_hidden=0, jump_type="read", evnt_record=None, graph=None, activation=nn.CELU(), aggregation=None):
+        super(ODEJumpFunc, self).__init__()
 
         self.dim_c = dim_c
         self.dim_h = dim_h
@@ -41,7 +39,10 @@ class ODEFunc(nn.Module):
         self.G = nn.Sequential(MLP(dim_c, dim_h, dim_hidden, num_hidden, activation), nn.Softplus())
         self.W = nn.ModuleList([MLP(dim_c, dim_h, dim_hidden, num_hidden, activation) for _ in range(dim_k)])
         self.L = nn.Sequential(MLP(dim_c+dim_h, dim_k, dim_hidden, num_hidden, activation), SoftPlus())
+
+        assert jump_type in ["simulate", "read"], "invalide jump_type, must be one of [simulate, read]"
         self.jump_type = jump_type
+
         self.evnt_record = [] if jump_type == "simulate" else evnt_record
         self.backtrace = []
         if graph:
@@ -66,58 +67,57 @@ class ODEFunc(nn.Module):
         return torch.cat((dc, dh), dim=2)
 
     def simulate_jump(self, t0, t1, z0, z1):
+        assert self.jump_type == "simulate", "simulate_jump must be called with jump_type = simulate"
         assert t0 < t1
         dz = torch.zeros(z0.shape)
         sequence = []
 
-        if self.jump_type == "simulate":
-            lmbda_dt = (self.L(z0) + self.L(z1)) / 2 * (t1 - t0)
-            rd = torch.rand(lmbda_dt.shape)
-            dN = torch.zeros(lmbda_dt.shape)
-            dN[rd < lmbda_dt ** 2 / 2] += 1
-            dN[rd < lmbda_dt ** 2 / 2 + lmbda_dt * torch.exp(-lmbda_dt)] += 1
+        lmbda_dt = (self.L(z0) + self.L(z1)) / 2 * (t1 - t0)
+        rd = torch.rand(lmbda_dt.shape)
+        dN = torch.zeros(lmbda_dt.shape)
+        dN[rd < lmbda_dt ** 2 / 2] += 1
+        dN[rd < lmbda_dt ** 2 / 2 + lmbda_dt * torch.exp(-lmbda_dt)] += 1
 
-            dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z1[:, :, :self.dim_c]) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
-            for evnt in dN.nonzero():
-                for _ in range(dN[tuple(evnt)].int()):
-                    sequence.append((t1,) + tuple(evnt))
-            self.evnt_record.extend(sequence)
+        dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z1[:, :, :self.dim_c]) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
+        for evnt in dN.nonzero():
+            for _ in range(dN[tuple(evnt)].int()):
+                sequence.append((t1,) + tuple(evnt))
+        self.evnt_record.extend(sequence)
 
         return dz
 
     def next_jump(self, t0, t1):
+        assert self.jump_type == "read", "next_jump must be called with jump_type = read"
         assert t0 != t1, "t0 can not equal t1"
 
         t = t1
-
-        if self.jump_type == "read":
-            inf = sys.maxsize
-            if t0 < t1:  # forward
-                idx = bisect.bisect_right(self.evnt_record, (t0, inf, inf, inf))
-                if idx != len(self.evnt_record):
-                    t = min(t1, torch.tensor(self.evnt_record[idx][0], dtype=torch.float64))
-            else:  # backward
-                idx = bisect.bisect_left(self.evnt_record, (t0, -inf, -inf, -inf))
-                if idx > 0:
-                    t = max(t1, torch.tensor(self.evnt_record[idx-1][0], dtype=torch.float64))
+        inf = sys.maxsize
+        if t0 < t1:  # forward
+            idx = bisect.bisect_right(self.evnt_record, (t0, inf, inf, inf))
+            if idx != len(self.evnt_record):
+                t = min(t1, torch.tensor(self.evnt_record[idx][0], dtype=torch.float64))
+        else:  # backward
+            idx = bisect.bisect_left(self.evnt_record, (t0, -inf, -inf, -inf))
+            if idx > 0:
+                t = max(t1, torch.tensor(self.evnt_record[idx-1][0], dtype=torch.float64))
 
         assert t != t0, "t can not equal t0"
         return t
 
-    def read_jump(self, t1, z1):
-        dz = torch.zeros(z1.shape)
+    def read_jump(self, t, z):
+        assert self.jump_type == "read", "read_jump must be called with jump_type = read"
+        dz = torch.zeros(z.shape)
 
-        if self.jump_type == "read":
-            inf = sys.maxsize
-            lid = bisect.bisect_left(self.evnt_record, (t1, -inf, -inf, -inf))
-            rid = bisect.bisect_right(self.evnt_record, (t1, inf, inf, inf))
+        inf = sys.maxsize
+        lid = bisect.bisect_left(self.evnt_record, (t, -inf, -inf, -inf))
+        rid = bisect.bisect_right(self.evnt_record, (t, inf, inf, inf))
 
-            dN = torch.zeros(z1.shape[:-1] + (self.dim_k,))
-            for evnt in self.evnt_record[lid:rid]:
-                t, sid, nid, eid = evnt
-                dN[sid, nid, eid] += 1
+        dN = torch.zeros(z.shape[:-1] + (self.dim_k,))
+        for evnt in self.evnt_record[lid:rid]:
+            _, sid, nid, eid = evnt
+            dN[sid, nid, eid] += 1
 
-            dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z1[:, :, :self.dim_c]) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
+        dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z[:, :, :self.dim_c]) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
 
         return dz
 
@@ -167,7 +167,7 @@ def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch
             # plot the state function (backward trace)
             if (tsave_ is not None) and (trace_ is not None):
                 for dat in list(trace_[:, sid, nid, :].detach().numpy().T):
-                    plt.plot(tsave_.numpy(), dat, linewidth=0.2, linestyle="densely dotted", color="black")
+                    plt.plot(tsave_.numpy(), dat, linewidth=0.2, linestyle="dotted", color="black")
 
             # plot the intensity function
             if (grid is not None) and (lmbda_real is not None):
