@@ -3,6 +3,8 @@ import signal
 import argparse
 import numpy as np
 import bisect
+import matplotlib
+matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
