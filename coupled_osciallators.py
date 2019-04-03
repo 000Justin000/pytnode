@@ -10,7 +10,20 @@ import torch.nn as nn
 import torch.optim as optim
 import networkx as nx
 from torchdiffeq import odeint
-from utils import MLP, GCU, RNN
+from utils import MLP, GCU, RNN, RunningAverageMeter
+
+parser = argparse.ArgumentParser('coupled_osciallators')
+parser.add_argument('--niters', type=int, default=100)
+parser.add_argument('--paramr', type=str, default='params.pth')
+parser.add_argument('--paramw', type=str, default='params.pth')
+parser.add_argument('--batch_size', type=int, default=1)
+parser.add_argument('--nsave', type=int, default=10)
+parser.add_argument('--num_validation', type=int, default=100)
+parser.add_argument('--dataset', type=str, default='three_body')
+parser.add_argument('--suffix', type=str, default='')
+parser.set_defaults(restart=False, evnt_align=False)
+parser.add_argument('--restart', dest='restart', action='store_true')
+args = parser.parse_args()
 
 
 class COFunc(nn.Module):
@@ -56,7 +69,7 @@ class COFunc(nn.Module):
         KE = (0.5 * self.m * (v**2).sum(dim=2)).sum(dim=1)
         KV = (0.5 * self.k * torch.stack(tuple(((r[:, e[0], :] - r[:, e[1], :])**2).sum(dim=1) for e in self.graph.edges), dim=1)).sum(dim=1)
 
-        print('energy @ {0:6.2f} is: '.format(t), KE+KV)
+        # print('energy @ {0:6.2f} is: '.format(t), KE+KV)
 
         return torch.cat((dv, dr), dim=2)
 
@@ -84,9 +97,24 @@ class ODEFunc(nn.Module):
         return dz
 
 
-def visualize(trace, appendix=""):
-    for sid in range(trace.shape[1]):
-        for tid in range(trace.shape[0]):
+def log_normal_pdf(x, mean, logvar):
+    const = torch.log(torch.tensor(2.0 * np.pi))
+    return -0.5 * (const + logvar + (x - mean) ** 2.0 / torch.exp(logvar))
+
+
+def normal_kl(mu1, lv1, mu2, lv2):
+    v1 = torch.exp(lv1)
+    v2 = torch.exp(lv2)
+    lstd1 = lv1 / 2.0
+    lstd2 = lv2 / 2.0
+
+    kl = lstd2 - lstd1 + ((v1 + (mu1 - mu2) ** 2.0) / (2.0 * v2)) - 0.5
+    return kl
+
+
+def visualize(trace, it=0, appendix=""):
+    for sid in range(3):
+        for tid in range(0, trace.shape[0], 5):
             fig = plt.figure(figsize=(6, 6), facecolor='white')
             axe = plt.gca()
             axe.set_title('Coupled Oscillators')
@@ -95,9 +123,9 @@ def visualize(trace, appendix=""):
             axe.set_xlim(-6.0, 6.0)
             axe.set_ylim(-6.0, 6.0)
 
-            plt.scatter(trace[tid, sid, :, 2].numpy(), trace[tid, sid, :, 3].numpy(), c=range(trace.shape[2]))
+            plt.scatter(trace[tid, sid, :, 0].detach().numpy(), trace[tid, sid, :, 1].detach().numpy(), c=range(trace.shape[2]))
 
-            plt.savefig('tmp/{:03d}_{:04d}'.format(sid, tid) + appendix, dpi=250)
+            plt.savefig(args.dataset + args.suffix + '/{:03d}_{:03d}_{:04d}'.format(it, sid, tid) + appendix, dpi=250)
             fig.clf()
             plt.close(fig)
 
@@ -111,7 +139,7 @@ if __name__ == '__main__':
     G.add_edge(1, 2)
     G.add_edge(0, 2)
 
-    nseq, dim_p, dim_c, dim_hidden, dt, tspan = 500, 2, 5, 20, 0.05, (-20.0, 100.0)
+    nseq, dim_p, dim_z, dim_hidden, dt, tspan = 500, 2, 5, 20, 0.05, (-10.0, 20.0)
 
     # initialize / load model
     torch.manual_seed(0)
@@ -122,18 +150,96 @@ if __name__ == '__main__':
     r0 = torch.randn(nseq, G.number_of_nodes(), dim_p)
 
     tsave = torch.arange(tspan[0], tspan[1], dt)
+    nts = (tsave < 0).sum()
 
     trajs = odeint(func, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
     trajs_tr, trajs_va, trajs_te = trajs[:, :300, :, :], trajs[:, 300:400, :, :], trajs[:, 400:, :, :]
 
+    visualize(trajs_va[nts:, :, :, dim_p:dim_p*2])
+
     # define encoder and decoder networks
-    enc = RNN(dim_p, dim_c*2, dim_hidden, 0, nn.Tanh())
-    dec = MLP(dim_c, dim_p, dim_hidden, 1, nn.CELU())
+    torch.manual_seed(0)
+    func = ODEFunc(dim_z, dim_hidden=20, num_hidden=0, activation=nn.CELU(), graph=G)
+    enc = RNN(dim_p, dim_z*2, dim_hidden, 0, nn.Tanh())
+    dec = MLP(dim_z, dim_p, dim_hidden, 1, nn.CELU())
 
-    # compute the encoding using trajectory upto t=0.0
-    out = enc(trajs_tr[:400, :, :, 2:4])
-    c0_mean, c0_logvar = out[-1, :, :, :dim_c], out[-1, :, :, dim_c:]
-    epsilon = torch.randn(c0_mean.shape)
+    # initialize / load model
+    if args.restart:
+        checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
+        func.load_state_dict(checkpoint['func_state_dict'])
+        enc.load_state_dict(checkpoint['enc_state_dict'])
+        dec.load_state_dict(checkpoint['dec_state_dict'])
+        it0 = checkpoint['it0']
+    else:
+        it0 = 0
 
+    optimizer = optim.Adam([{'params': func.parameters()},
+                            {'params': enc.parameters()},
+                            {'params': dec.parameters()},
+                            ], lr=3e-4, weight_decay=1e-6)
 
+    loss_meter = RunningAverageMeter()
 
+    it = it0
+    while it < args.niters:
+        # clear out gradients for variables
+        optimizer.zero_grad()
+
+        # sample a mini-batch, create a grid based on that
+        np.random.seed(it)
+        batch_id = np.random.choice(trajs_tr.shape[1], args.batch_size, replace=False)
+
+        # compute the encoding using trajectory upto t=0.0
+        out = enc(trajs_tr[:nts, batch_id, :, dim_p:dim_p*2])
+        qz0_mean, qz0_logvar = out[-1, :, :, :dim_z], out[-1, :, :, dim_z:]
+        epsilon = torch.randn(qz0_mean.shape)
+
+        z0 = epsilon * torch.exp(0.5 * qz0_logvar) + qz0_mean
+        pred_z = odeint(func, z0, tsave[nts:])
+        pred_x = dec(pred_z)
+
+        # compute loss
+        noise_std = torch.zeros(pred_x.shape) + 0.3
+        noise_logvar = 2.0 * torch.log(noise_std)
+        logpx = log_normal_pdf(trajs_tr[nts:, batch_id, :, dim_p:dim_p*2], pred_x, noise_std).sum()
+        pz0_mean, pz0_logvar = torch.zeros(z0.shape), torch.zeros(z0.shape)
+        kl = normal_kl(qz0_mean, qz0_logvar, pz0_mean, pz0_logvar).sum()
+
+        # update parameters
+        loss = (-logpx + kl) / len(batch_id)
+        loss.backward()
+        optimizer.step()
+
+        loss_meter.update(loss.item())
+        print('Iter: {}, running avg elbo: {:.4f}'.format(it, -loss_meter.avg), flush=True)
+
+        it += 1
+
+        # validate and visualize
+        if it % args.nsave == 0:
+            # compute the encoding using trajectory upto t=0.0
+            out = enc(trajs_va[:nts, :, :, dim_p:dim_p*2])
+            qz0_mean, qz0_logvar = out[-1, :, :, :dim_z], out[-1, :, :, dim_z:]
+            epsilon = torch.randn(qz0_mean.shape)
+
+            z0 = epsilon * torch.exp(0.5 * qz0_logvar) + qz0_mean
+            pred_z = odeint(func, z0, tsave[nts:])
+            pred_x = dec(pred_z)
+
+            visualize(pred_x, it)
+
+            # compute loss
+            noise_std = torch.zeros(pred_x.shape) + 0.3
+            noise_logvar = 2.0 * torch.log(noise_std)
+            logpx = log_normal_pdf(trajs_va[nts:, :, :, dim_p:dim_p*2], pred_x, noise_std).sum()
+            pz0_mean, pz0_logvar = torch.zeros(z0.shape), torch.zeros(z0.shape)
+            kl = normal_kl(qz0_mean, qz0_logvar, pz0_mean, pz0_logvar).sum()
+
+            loss = (-logpx + kl) / trajs_va.shape[1]
+            print('Iter: {}, validation elbo: {:.4f}'.format(it, -loss_meter.avg), flush=True)
+
+            # save
+            torch.save({'func_state_dict': func.state_dict(),
+                        'enc_state_dict':  enc.state_dict(),
+                        'dec_state_dict':  dec.state_dict(),
+                        'it0': it}, args.dataset + args.suffix + '/' + args.paramw)

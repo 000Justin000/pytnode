@@ -1,6 +1,29 @@
 import torch
 import torch.nn as nn
 
+# compute the running average
+class RunningAverageMeter(object):
+    """Computes and stores the average and current value"""
+
+    def __init__(self, momentum=0.90):
+        self.vals = []
+        self.momentum = momentum
+        self.reset()
+
+    def reset(self):
+        self.vals = []
+        self.val = None
+        self.avg = 0
+
+    def update(self, val):
+        self.vals.append(val)
+        if self.val is None:
+            self.avg = val
+        else:
+            self.avg = self.avg * self.momentum + val * (1 - self.momentum)
+        self.val = val
+
+
 # SoftPlus activation function add epsilon
 class SoftPlus(nn.Module):
 

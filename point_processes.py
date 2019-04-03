@@ -9,9 +9,9 @@ import torch.nn as nn
 import torch.optim as optim
 import networkx as nx
 from torchdiffeq import odeint_adjoint as odeint
-from utils import SoftPlus, MLP, GCU
+from utils import SoftPlus, MLP, GCU, RunningAverageMeter
 
-parser = argparse.ArgumentParser('tnode')
+parser = argparse.ArgumentParser('point_processes')
 parser.add_argument('--niters', type=int, default=100)
 parser.add_argument('--jump_type', type=str, default='none')
 parser.add_argument('--paramr', type=str, default='params.pth')
@@ -120,28 +120,6 @@ class ODEJumpFunc(nn.Module):
         dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z[:, :, :self.dim_c]) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
 
         return dz
-
-
-class RunningAverageMeter(object):
-    """Computes and stores the average and current value"""
-
-    def __init__(self, momentum=0.90):
-        self.vals = []
-        self.momentum = momentum
-        self.reset()
-
-    def reset(self):
-        self.vals = []
-        self.val = None
-        self.avg = 0
-
-    def update(self, val):
-        self.vals.append(val)
-        if self.val is None:
-            self.avg = val
-        else:
-            self.avg = self.avg * self.momentum + val * (1 - self.momentum)
-        self.val = val
 
 
 def read_timeseries(filename, num_seqs=sys.maxsize):
@@ -314,7 +292,7 @@ if __name__ == '__main__':
 
     # initialize / load model
     torch.manual_seed(0)
-    func = ODEJumpFunc(dim_c, dim_h, dim_k, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, graph=G, activation=nn.CELU())
+    func = ODEJumpFunc(dim_c, dim_h, dim_k, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, activation=nn.CELU(), graph=G)
     if args.restart:
         checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
