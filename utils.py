@@ -72,3 +72,24 @@ class GCU(nn.Module):
         dc = self.out(torch.cat((v, v_), dim=1))
 
         return dc
+
+
+# RNN
+class RNN(nn.Module):
+
+    def __init__(self, dim_in, dim_out, dim_hidden, num_hidden, activation):
+        super(RNN, self).__init__()
+
+        self.dim_hidden = dim_hidden
+        self.i2h = MLP(dim_in+dim_hidden, dim_hidden, dim_hidden, num_hidden, activation)
+        self.h2o = MLP(dim_hidden, dim_out, dim_hidden, num_hidden, activation)
+
+    def forward(self, x):
+        assert len(x.shape) > 2,  'z need to be at least a 2 dimensional vector accessed by [tid ... dim_id]'
+
+        hh = [torch.zeros(x.shape[1:-1] + (self.dim_hidden,))]
+        for i in range(x.shape[0]):
+            combined = torch.cat((x[i], hh[-1]), dim=-1)
+            hh.append(self.i2h(combined))
+
+        return self.h2o(hh[1:])
