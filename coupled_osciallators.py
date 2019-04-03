@@ -139,7 +139,7 @@ if __name__ == '__main__':
     G.add_edge(1, 2)
     G.add_edge(0, 2)
 
-    nseq, dim_p, dim_z, dim_hidden, dt, tspan = 500, 2, 5, 20, 0.05, (-10.0, 20.0)
+    nseq, dim_p, dim_z, dim_hidden, dt, tspan = 1000, 2, 5, 20, 0.05, (-10.0, 20.0)
 
     # initialize / load model
     torch.manual_seed(0)
@@ -153,7 +153,7 @@ if __name__ == '__main__':
     nts = (tsave < 0).sum()
 
     trajs = odeint(func, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
-    trajs_tr, trajs_va, trajs_te = trajs[:, :300, :, :], trajs[:, 300:400, :, :], trajs[:, 400:, :, :]
+    trajs_tr, trajs_va, trajs_te = trajs[:, :int(nseq*0.6), :, :], trajs[:, int(nseq*0.6):int(nseq*0.8), :, :], trajs[:, int(nseq*0.8):, :, :]
 
     visualize(trajs_va[nts:, :, :, dim_p:dim_p*2])
 
