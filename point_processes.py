@@ -318,7 +318,6 @@ if __name__ == '__main__':
             optimizer.zero_grad()
 
             # sample a mini-batch, create a grid based on that
-            np.random.seed(it)
             batch_id = np.random.choice(len(TSTR), args.batch_size, replace=False)
             batch = [TSTR[seqid] for seqid in batch_id]
 
