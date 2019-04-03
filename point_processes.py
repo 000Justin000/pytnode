@@ -167,7 +167,7 @@ def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch
             # plot the state function (backward trace)
             if (tsave_ is not None) and (trace_ is not None):
                 for dat in list(trace_[:, sid, nid, :].detach().numpy().T):
-                    plt.plot(tsave_.numpy(), dat, linewidth=0.2, linestyle="densely dotted", color="black")
+                    plt.plot(tsave_.numpy(), dat, linewidth=0.2, linestyle="dotted", color="black")
 
             # plot the intensity function
             if (grid is not None) and (lmbda_real is not None):
