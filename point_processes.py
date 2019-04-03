@@ -314,7 +314,7 @@ if __name__ == '__main__':
 
     # initialize / load model
     torch.manual_seed(0)
-    func = ODEFunc(dim_c, dim_h, dim_k, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, graph=G, activation=nn.CELU())
+    func = ODEJumpFunc(dim_c, dim_h, dim_k, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, graph=G, activation=nn.CELU())
     if args.restart:
         checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
