@@ -155,7 +155,7 @@ if __name__ == '__main__':
     trajs = odeint(func, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
     trajs_tr, trajs_va, trajs_te = trajs[:, :int(nseq*0.6), :, :], trajs[:, int(nseq*0.6):int(nseq*0.8), :, :], trajs[:, int(nseq*0.8):, :, :]
 
-    visualize(trajs_te[nts:, :, :, dim_p:dim_p*2], it=0, num_seqs=3)
+    visualize(trajs_va[nts:, :, :, dim_p:dim_p*2], it=0, num_seqs=3)
 
     # define encoder and decoder networks
     if args.debug: torch.manual_seed(0)
@@ -241,5 +241,5 @@ if __name__ == '__main__':
                         'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
     
     # test loss
-    loss = compute_loss(trajs_te, visualization=True, it=it)
+    loss = compute_loss(trajs_te)
     print('Iter: {}, testing elbo: {:.4f}'.format(it, -loss.item()), flush=True)
