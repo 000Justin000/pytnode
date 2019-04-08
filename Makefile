@@ -7,4 +7,4 @@ run_coupled_oscillators:
 	taskset --cpu-list 3 python coupled_osciallators.py --niters=50000 --batch_size=300 --nsave=100 > three_body/${COMMIT}.log 2> three_body/${COMMIT}.error &
 
 clean:
-	rm exponential_hawkes/* self_inhibiting/* powerlaw_hawkes/* three_body/*
+	# rm exponential_hawkes/* self_inhibiting/* powerlaw_hawkes/* three_body/*
