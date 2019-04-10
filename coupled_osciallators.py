@@ -137,7 +137,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
 
     # create a graph
-    G = nx.complete_graph(3)
+    G = nx.complete_graph(6)
 
     nseq, dim_p, dim_z, dim_hidden, dt, tspan = 1000, 2, 5, 20, 0.05, (-10.0, 20.0)
 
@@ -155,11 +155,11 @@ if __name__ == '__main__':
     trajs = odeint(func, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
     trajs_tr, trajs_va, trajs_te = trajs[:, :int(nseq*0.6), :, :], trajs[:, int(nseq*0.6):int(nseq*0.8), :, :], trajs[:, int(nseq*0.8):, :, :]
 
-    visualize(trajs_va[nts:, :, :, dim_p:dim_p*2], it=0, num_seqs=3)
+    visualize(trajs_te[nts:, :, :, dim_p:dim_p*2], it=0, num_seqs=3)
 
     # define encoder and decoder networks
     if args.debug: torch.manual_seed(0)
-    func = ODEFunc(dim_z, dim_hidden=20, num_hidden=1, activation=nn.CELU(), graph=G)
+    func = ODEFunc(dim_z, dim_hidden=20, num_hidden=0, activation=nn.CELU(), graph=G)
     enc = RNN(dim_p, dim_z*2, dim_hidden, 0, nn.Tanh())
     dec = MLP(dim_z, dim_p, dim_hidden, 1, nn.CELU())
 
@@ -241,5 +241,5 @@ if __name__ == '__main__':
                         'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
     
     # test loss
-    loss = compute_loss(trajs_te)
+    loss = compute_loss(trajs_te, visualization=True, it=it)
     print('Iter: {}, testing elbo: {:.4f}'.format(it, -loss.item()), flush=True)
