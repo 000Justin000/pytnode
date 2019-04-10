@@ -158,9 +158,9 @@ if __name__ == '__main__':
 
     # fix seeding for randomness
     if args.debug:
-        random.seed(0)
-        np.random.seed(0)
-        torch.manual_seed(0)
+        random.seed(1)
+        np.random.seed(1)
+        torch.manual_seed(1)
 
     # num_seqs : number of validation examples
     num_seqs, dim_p, dim_z, dim_hidden, dt, tspan = 500, 2, 5, 20, 0.05, (-10.0, 20.0)
@@ -235,8 +235,9 @@ if __name__ == '__main__':
         # clear out gradients for variables
         optimizer.zero_grad()
 
-        # first sample a Gnp graph, then sample the trace
-        G = nx.gnp_random_graph(np.random.randint(2, 7), 0.5)
+        # first sample the number of particles, then sample the trace
+        num_vertices = random.randint(1, 6)
+        G = nx.complete_graph(num_vertices)
         cofunc.setup_graph(G)
         func.setup_graph(G)
         trajs_tr = cotrace(cofunc, args.batch_size, tsave)

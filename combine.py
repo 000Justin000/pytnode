@@ -4,7 +4,7 @@ import os
 path = sys.argv[1]
 suffix = sys.argv[2]
 
-exists = os.path.isfile(os.path.join(path, "combine/"))
+exists = os.path.isdir(os.path.join(path, "combine/"))
 if not exists:
     os.system("mkdir " + os.path.join(path, "combine/"))
 
