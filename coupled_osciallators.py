@@ -137,12 +137,13 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
 
     # create a graph
-    G = nx.complete_graph(6)
+    G = nx.complete_graph(3)
 
     nseq, dim_p, dim_z, dim_hidden, dt, tspan = 1000, 2, 5, 20, 0.05, (-10.0, 20.0)
 
     # generate data
-    if args.debug: torch.manual_seed(0)
+    if args.debug:
+        torch.manual_seed(0)
     func = COFunc(dim_p, graph=G)
 
     v0 = torch.randn(nseq, G.number_of_nodes(), dim_p)
@@ -158,7 +159,8 @@ if __name__ == '__main__':
     visualize(trajs_te[nts:, :, :, dim_p:dim_p*2], it=0, num_seqs=3)
 
     # define encoder and decoder networks
-    if args.debug: torch.manual_seed(0)
+    if args.debug:
+        torch.manual_seed(0)
     func = ODEFunc(dim_z, dim_hidden=20, num_hidden=0, activation=nn.CELU(), graph=G)
     enc = RNN(dim_p, dim_z*2, dim_hidden, 0, nn.Tanh())
     dec = MLP(dim_z, dim_p, dim_hidden, 1, nn.CELU())
@@ -214,7 +216,8 @@ if __name__ == '__main__':
         optimizer.zero_grad()
 
         # sample a mini-batch
-        if args.debug: np.random.seed(it)
+        if args.debug:
+            np.random.seed(it)
         batch_id = np.random.choice(trajs_tr.shape[1], args.batch_size, replace=False)
 
         # compute the loss and go down the gradient
