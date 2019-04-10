@@ -143,8 +143,8 @@ def visualize(trace, it=0, num_seqs=sys.maxsize, appendix=""):
             axe.set_title('Coupled Oscillators')
             axe.set_xlabel('x')
             axe.set_ylabel('y')
-            axe.set_xlim(-6.0, 6.0)
-            axe.set_ylim(-6.0, 6.0)
+            axe.set_xlim(-10.0, 10.0)
+            axe.set_ylim(-10.0, 10.0)
 
             plt.scatter(trace[tid, sid, :, 0].detach().numpy(), trace[tid, sid, :, 1].detach().numpy(), c=range(trace.shape[2]))
 
@@ -170,7 +170,7 @@ if __name__ == '__main__':
     nts = (tsave < 0).sum()
 
     # set up the coupled-oscillator function, update the graph
-    G0 = nx.complete_graph(3)
+    G0 = nx.complete_graph(10)
     cofunc = COFunc(dim_p)
     cofunc.setup_graph(G0)
 
@@ -236,7 +236,7 @@ if __name__ == '__main__':
         optimizer.zero_grad()
 
         # first sample a Gnp graph, then sample the trace
-        G = nx.gnp_random_graph(np.random.randint(3, 10), 0.3)
+        G = nx.gnp_random_graph(np.random.randint(2, 7), 0.5)
         cofunc.setup_graph(G)
         func.setup_graph(G)
         trajs_tr = cotrace(cofunc, args.batch_size, tsave)
