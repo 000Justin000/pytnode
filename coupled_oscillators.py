@@ -36,6 +36,10 @@ class COFunc(nn.Module):
         super(COFunc, self).__init__()
 
         self.p = p
+        self.setup_graph(graph, m, k)
+
+    def setup_graph(self, graph=None, m=1.0, k=1.0):
+
         if graph:
             self.graph = graph
 
@@ -58,7 +62,7 @@ class COFunc(nn.Module):
             self.m = torch.ones(1) * m
             self.k = torch.ones(0) * k
 
-        self.e2id = {tuple(sorted(e)): idx for idx, e in enumerate(graph.edges())}
+        self.e2id = {tuple(sorted(e)): idx for idx, e in enumerate(self.graph.edges())}
 
     def forward(self, t, u):
         v = u[:, :, :self.p]
@@ -83,6 +87,10 @@ class ODEFunc(nn.Module):
         super(ODEFunc, self).__init__()
 
         self.F = GCU(dim_z, 0, dim_hidden, num_hidden, activation, aggregation)
+        self.setup_graph(graph)
+
+    def setup_graph(self, graph=None):
+
         if graph:
             self.graph = graph
         else:
@@ -103,9 +111,9 @@ class ODEFunc(nn.Module):
 def cotrace(cofunc, num_seqs, tsave):
 
     # set initial states
-    v0 = torch.randn(num_seqs, G.number_of_nodes(), cofunc.p)
+    v0 = torch.randn(num_seqs, cofunc.graph.number_of_nodes(), cofunc.p)
     v0 = v0 - v0.mean(dim=1, keepdim=True)
-    r0 = torch.randn(num_seqs, G.number_of_nodes(), cofunc.p)
+    r0 = torch.randn(num_seqs, cofunc.graph.number_of_nodes(), cofunc.p)
 
     trajs = odeint(cofunc, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
 
@@ -155,30 +163,31 @@ if __name__ == '__main__':
         torch.manual_seed(0)
 
     # num_seqs : number of validation examples
-    num_seqs, dim_p, dim_z, dim_hidden, dt, tspan = 100, 2, 5, 20, 0.05, (-10.0, 20.0)
+    num_seqs, dim_p, dim_z, dim_hidden, dt, tspan = 500, 2, 5, 20, 0.05, (-10.0, 20.0)
 
     # set up the grid
     tsave = torch.arange(tspan[0], tspan[1], dt)
     nts = (tsave < 0).sum()
 
-    # set up the couple-osciallator function,
+    # set up the coupled-oscillator function, update the graph
+    G0 = nx.complete_graph(3)
     cofunc = COFunc(dim_p)
-    cofunc.graph = nx.complete_graph(2)
+    cofunc.setup_graph(G0)
 
-    # set initial states
-    v0 = torch.randn(num_seqs, G.number_of_nodes(), dim_p)
-    v0 = v0 - v0.mean(dim=1, keepdim=True)
-    r0 = torch.randn(num_seqs, G.number_of_nodes(), dim_p)
-
-
-    trajs_va = odeint(cofunc, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
-
+    # simulate the validation trace
+    trajs_va = cotrace(cofunc, num_seqs, tsave)
     visualize(trajs_va[nts:, :, :, dim_p:dim_p*2], it=0, num_seqs=3)
 
     # define encoder and decoder networks
-    func = ODEFunc(dim_z, dim_hidden=20, num_hidden=0, activation=nn.CELU(), graph=G)
+    func = ODEFunc(dim_z, dim_hidden=20, num_hidden=0, activation=nn.CELU())
     enc = RNN(dim_p, dim_z*2, dim_hidden, 0, nn.Tanh())
     dec = MLP(dim_z, dim_p, dim_hidden, 1, nn.CELU())
+
+    # set up the optimizer
+    optimizer = optim.Adam([{'params': func.parameters()},
+                            {'params': enc.parameters()},
+                            {'params': dec.parameters()},
+                            ], lr=3e-4, weight_decay=1e-6)
 
     # initialize / load model
     if args.restart:
@@ -186,14 +195,10 @@ if __name__ == '__main__':
         func.load_state_dict(checkpoint['func_state_dict'])
         enc.load_state_dict(checkpoint['enc_state_dict'])
         dec.load_state_dict(checkpoint['dec_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         it0 = checkpoint['it0']
     else:
         it0 = 0
-
-    optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': enc.parameters()},
-                            {'params': dec.parameters()},
-                            ], lr=3e-4, weight_decay=1e-6)
 
     def compute_loss(trajs, visualization=False, it=0, appendix=""):
         
@@ -219,7 +224,7 @@ if __name__ == '__main__':
         kl = normal_kl(qz0_mean, qz0_logvar, pz0_mean, pz0_logvar).sum()
 
         # update parameters
-        loss = (-logpx + kl) / trajs.shape[1]
+        loss = (-logpx + kl) / (trajs.shape[1] * trajs.shape[2])
         
         return loss
 
@@ -230,11 +235,14 @@ if __name__ == '__main__':
         # clear out gradients for variables
         optimizer.zero_grad()
 
-        # sample a mini-batch
-        batch_id = np.random.choice(trajs_tr.shape[1], args.batch_size, replace=False)
+        # first sample a Gnp graph, then sample the trace
+        G = nx.gnp_random_graph(np.random.randint(3, 10), 0.3)
+        cofunc.setup_graph(G)
+        func.setup_graph(G)
+        trajs_tr = cotrace(cofunc, args.batch_size, tsave)
 
         # compute the loss and go down the gradient
-        loss = compute_loss(trajs_tr[:, batch_id, :, :])
+        loss = compute_loss(trajs_tr)
         loss.backward()
         optimizer.step()
 
@@ -246,6 +254,7 @@ if __name__ == '__main__':
         # validate and visualize
         if it % args.nsave == 0:
 
+            func.setup_graph(G0)
             loss = compute_loss(trajs_va, visualization=True, it=it)
 
             print('Iter: {}, validation elbo: {:.4f}'.format(it, -loss.item()), flush=True)
@@ -254,8 +263,10 @@ if __name__ == '__main__':
             torch.save({'func_state_dict': func.state_dict(),
                         'enc_state_dict':  enc.state_dict(),
                         'dec_state_dict':  dec.state_dict(),
+                        'optimizer_state_dict':  optimizer.state_dict(),
                         'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
-    
-    # test loss
-    loss = compute_loss(trajs_te, visualization=True, it=it)
-    print('Iter: {}, testing elbo: {:.4f}'.format(it, -loss.item()), flush=True)
+
+    # compute validation loss again in the end
+    func.setup_graph(G0)
+    loss = compute_loss(trajs_va, visualization=True, it=it)
+    print('Iter: {}, validation elbo: {:.4f}'.format(it, -loss.item()), flush=True)

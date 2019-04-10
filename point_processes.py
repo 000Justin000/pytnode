@@ -44,9 +44,12 @@ class ODEJumpFunc(nn.Module):
 
         assert jump_type in ["simulate", "read"], "invalide jump_type, must be one of [simulate, read]"
         self.jump_type = jump_type
-
+        self.setup_graph(graph)
         self.evnt_record = [] if jump_type == "simulate" else evnt_record
         self.backtrace = []
+
+    def setup_graph(self, graph=None):
+
         if graph:
             self.graph = graph
         else:
