@@ -4,7 +4,7 @@ run_point_process:
 	taskset --cpu-list 3 python point_processes.py --dataset powerlaw_hawkes    --niters 3000 --jump_type read --batch_size 30 --nsave 50 --num_validation 20 --evnt_align > powerlaw_hawkes/${COMMIT}.log    2>powerlaw_hawkes/${COMMIT}.error &
 
 run_coupled_oscillators:
-	taskset --cpu-list 0 python coupled_oscillators.py --niters 100000 --batch_size 300 --nsave 500 --suffix _multilayer --debug > three_body/${COMMIT}.log 2> three_body/${COMMIT}.error &
+	taskset --cpu-list 0 python coupled_oscillators.py --niters 100000 --batch_size 300 --nsave 500 --suffix _multilayer --debug > three_body_multilayer/${COMMIT}.log 2> three_body_multilayer/${COMMIT}.error &
 
 clean_point_process:
 	rm -rf exponential_hawkes/*
