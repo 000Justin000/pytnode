@@ -148,7 +148,7 @@ def visualize(trace, it=0, num_seqs=sys.maxsize, appendix=""):
 
             plt.scatter(trace[tid, sid, :, 0].detach().numpy(), trace[tid, sid, :, 1].detach().numpy(), c=range(trace.shape[2]))
 
-            plt.savefig(args.dataset + args.suffix + '/{:05d}_{:03d}_{:04d}'.format(it, sid, tid) + appendix, dpi=250)
+            plt.savefig(args.dataset + args.suffix + '/{:06d}_{:03d}_{:04d}'.format(it, sid, tid) + appendix, dpi=250)
             fig.clf()
             plt.close(fig)
 
