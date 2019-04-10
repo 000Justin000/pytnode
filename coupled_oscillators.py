@@ -1,6 +1,7 @@
 import sys
 import signal
 import argparse
+import random
 import numpy as np
 import bisect
 import matplotlib
@@ -69,9 +70,8 @@ class COFunc(nn.Module):
                                for nid in self.graph.nodes()), dim=1)
         dr = v
 
-        KE = (0.5 * self.m * (v**2).sum(dim=2)).sum(dim=1)
-        KV = (0.5 * self.k * torch.stack(tuple(((r[:, e[0], :] - r[:, e[1], :])**2).sum(dim=1) for e in self.graph.edges), dim=1)).sum(dim=1)
-
+        # KE = (0.5 * self.m * (v**2).sum(dim=2)).sum(dim=1)
+        # KV = (0.5 * self.k * torch.stack(tuple(((r[:, e[0], :] - r[:, e[1], :])**2).sum(dim=1) for e in self.graph.edges), dim=1)).sum(dim=1)
         # print('energy @ {0:6.2f} is: '.format(t), KE+KV)
 
         return torch.cat((dv, dr), dim=2)
@@ -98,6 +98,18 @@ class ODEFunc(nn.Module):
         # dz = dz - (dz*z).sum(dim=2, keepdim=True) / (z*z).sum(dim=2, keepdim=True) * z
 
         return dz
+
+
+def cotrace(cofunc, num_seqs, tsave):
+
+    # set initial states
+    v0 = torch.randn(num_seqs, G.number_of_nodes(), cofunc.p)
+    v0 = v0 - v0.mean(dim=1, keepdim=True)
+    r0 = torch.randn(num_seqs, G.number_of_nodes(), cofunc.p)
+
+    trajs = odeint(cofunc, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
+
+    return trajs
 
 
 def log_normal_pdf(x, mean, logvar):
@@ -136,31 +148,34 @@ def visualize(trace, it=0, num_seqs=sys.maxsize, appendix=""):
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
 
-    # create a graph
-    G = nx.complete_graph(3)
-
-    nseq, dim_p, dim_z, dim_hidden, dt, tspan = 1000, 2, 5, 20, 0.05, (-10.0, 20.0)
-
-    # generate data
+    # fix seeding for randomness
     if args.debug:
+        random.seed(0)
+        np.random.seed(0)
         torch.manual_seed(0)
-    func = COFunc(dim_p, graph=G)
 
-    v0 = torch.randn(nseq, G.number_of_nodes(), dim_p)
-    v0 = v0 - v0.mean(dim=1, keepdim=True)
-    r0 = torch.randn(nseq, G.number_of_nodes(), dim_p)
+    # num_seqs : number of validation examples
+    num_seqs, dim_p, dim_z, dim_hidden, dt, tspan = 100, 2, 5, 20, 0.05, (-10.0, 20.0)
 
+    # set up the grid
     tsave = torch.arange(tspan[0], tspan[1], dt)
     nts = (tsave < 0).sum()
 
-    trajs = odeint(func, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
-    trajs_tr, trajs_va, trajs_te = trajs[:, :int(nseq*0.6), :, :], trajs[:, int(nseq*0.6):int(nseq*0.8), :, :], trajs[:, int(nseq*0.8):, :, :]
+    # set up the couple-osciallator function,
+    cofunc = COFunc(dim_p)
+    cofunc.graph = nx.complete_graph(2)
 
-    visualize(trajs_te[nts:, :, :, dim_p:dim_p*2], it=0, num_seqs=3)
+    # set initial states
+    v0 = torch.randn(num_seqs, G.number_of_nodes(), dim_p)
+    v0 = v0 - v0.mean(dim=1, keepdim=True)
+    r0 = torch.randn(num_seqs, G.number_of_nodes(), dim_p)
+
+
+    trajs_va = odeint(cofunc, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
+
+    visualize(trajs_va[nts:, :, :, dim_p:dim_p*2], it=0, num_seqs=3)
 
     # define encoder and decoder networks
-    if args.debug:
-        torch.manual_seed(0)
     func = ODEFunc(dim_z, dim_hidden=20, num_hidden=0, activation=nn.CELU(), graph=G)
     enc = RNN(dim_p, dim_z*2, dim_hidden, 0, nn.Tanh())
     dec = MLP(dim_z, dim_p, dim_hidden, 1, nn.CELU())
@@ -216,8 +231,6 @@ if __name__ == '__main__':
         optimizer.zero_grad()
 
         # sample a mini-batch
-        if args.debug:
-            np.random.seed(it)
         batch_id = np.random.choice(trajs_tr.shape[1], args.batch_size, replace=False)
 
         # compute the loss and go down the gradient
