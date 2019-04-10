@@ -3,6 +3,11 @@ import os
 
 path = sys.argv[1]
 suffix = sys.argv[2]
+
+exists = os.path.isfile(os.path.join(path, "combine/"))
+if not exists:
+    os.system("mkdir " + os.path.join(path, "combine/"))
+
 for filename in os.listdir(path):
     if filename[-4:] == ".png":
         itr, nid, tid = filename[:-4].split('_')

@@ -115,7 +115,7 @@ def cotrace(cofunc, num_seqs, tsave):
     v0 = v0 - v0.mean(dim=1, keepdim=True)
     r0 = torch.randn(num_seqs, cofunc.graph.number_of_nodes(), cofunc.p)
 
-    trajs = odeint(cofunc, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-7, atol=1.0e-9)
+    trajs = odeint(cofunc, torch.cat((v0, r0), dim=2), tsave, method='adams', rtol=1.0e-5, atol=1.0e-7)
 
     return trajs
 
@@ -187,7 +187,7 @@ if __name__ == '__main__':
     optimizer = optim.Adam([{'params': func.parameters()},
                             {'params': enc.parameters()},
                             {'params': dec.parameters()},
-                            ], lr=3e-4, weight_decay=1e-6)
+                            ], lr=1e-4, weight_decay=1e-6)
 
     # initialize / load model
     if args.restart:
