@@ -29,27 +29,37 @@ parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
 args = parser.parse_args()
 
 
+# This function need to be stateless
 class ODEJumpFunc(nn.Module):
 
-    def __init__(self, dim_c, dim_h, dim_k, dim_hidden=20, num_hidden=0, jump_type="read", evnt_record=None, graph=None, activation=nn.CELU(), aggregation=None):
+    def __init__(self, dim_c, dim_h, dim_N, dim_hidden=20, num_hidden=0, activation=nn.CELU(), aggregation=None, jump_type="read", evnts=[], evnt_align=False, graph=None):
         super(ODEJumpFunc, self).__init__()
 
         self.dim_c = dim_c
         self.dim_h = dim_h
-        self.dim_k = dim_k
+        self.dim_N = dim_N
+
         self.F = GCU(dim_c, dim_h, dim_hidden, num_hidden, activation, aggregation)
         self.G = nn.Sequential(MLP(dim_c, dim_h, dim_hidden, num_hidden, activation), nn.Softplus())
-        self.W = nn.ModuleList([MLP(dim_c, dim_h, dim_hidden, num_hidden, activation) for _ in range(dim_k)])
-        self.L = nn.Sequential(MLP(dim_c+dim_h, dim_k, dim_hidden, num_hidden, activation), SoftPlus())
+        self.W = nn.ModuleList([MLP(dim_c, dim_h, dim_hidden, num_hidden, activation) for _ in range(dim_N)])
+        self.L = nn.Sequential(MLP(dim_c+dim_h, dim_N, dim_hidden, num_hidden, activation), SoftPlus())
 
-        assert jump_type in ["simulate", "read"], "invalide jump_type, must be one of [simulate, read]"
-        self.jump_type = jump_type
-        self.setup_graph(graph)
-        self.evnt_record = [] if jump_type == "simulate" else evnt_record
+        self.set_evnts(jump_type, evnts, evnt_align)
+        self.set_graph(graph)
+
         self.backtrace = []
 
-    def setup_graph(self, graph=None):
+    def set_evnts(self, jump_type=None, evnts=[], evnt_align=None):
+        if jump_type is not None:
+            assert jump_type in ["simulate", "read"], "invalide jump_type, must be one of [simulate, read]"
+            self.jump_type = jump_type
 
+        self.evnts = evnts
+
+        if evnt_align is not None:
+            self.evnt_align = evnt_align
+
+    def set_graph(self, graph=None):
         if graph:
             self.graph = graph
         else:
@@ -71,40 +81,61 @@ class ODEJumpFunc(nn.Module):
 
         return torch.cat((dc, dh), dim=2)
 
-    def simulate_jump(self, t0, t1, z0, z1):
+    def next_simulated_jump(self, t0, z0, t1):
+
+        if not self.evnt_align:
+            m = torch.distributions.Exponential(self.L(z0))
+            # next arrival time
+            tt = t0 + m.sample()
+            tt_min = tt.min()
+
+            if tt_min <= t1:
+                dN = (tt == tt_min).float()
+            else:
+                dN = torch.zeros(tt.shape)
+
+            next_t = min(tt_min, t1)
+        else:
+            assert t0 < t1
+
+            lmbda_dt = self.L(z0) * (t1 - t0)
+            rd = torch.rand(lmbda_dt.shape)
+            dN = torch.zeros(lmbda_dt.shape)
+            dN[rd < lmbda_dt ** 2 / 2] += 1
+            dN[rd < lmbda_dt ** 2 / 2 + lmbda_dt * torch.exp(-lmbda_dt)] += 1
+
+            next_t = t1
+
+        return dN, next_t
+
+    def simulated_jump(self, dN, t, z):
         assert self.jump_type == "simulate", "simulate_jump must be called with jump_type = simulate"
-        assert t0 < t1
-        dz = torch.zeros(z0.shape)
+        dz = torch.zeros(z.shape)
         sequence = []
 
-        lmbda_dt = (self.L(z0) + self.L(z1)) / 2 * (t1 - t0)
-        rd = torch.rand(lmbda_dt.shape)
-        dN = torch.zeros(lmbda_dt.shape)
-        dN[rd < lmbda_dt ** 2 / 2] += 1
-        dN[rd < lmbda_dt ** 2 / 2 + lmbda_dt * torch.exp(-lmbda_dt)] += 1
+        dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z[:, :, :self.dim_c]) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
 
-        dz[:, :, self.dim_c:] += torch.matmul(torch.stack(tuple(W_(z1[:, :, :self.dim_c]) for W_ in self.W), dim=-1), dN.unsqueeze(-1)).squeeze(-1)
-        for evnt in dN.nonzero():
-            for _ in range(dN[tuple(evnt)].int()):
-                sequence.append((t1,) + tuple(evnt))
-        self.evnt_record.extend(sequence)
+        for idx in dN.nonzero():
+            for _ in range(dN[tuple(idx)].int()):
+                sequence.append((t,) + tuple(idx))
+        self.evnts.extend(sequence)
 
         return dz
 
-    def next_jump(self, t0, t1):
-        assert self.jump_type == "read", "next_jump must be called with jump_type = read"
+    def next_read_jump(self, t0, t1):
+        assert self.jump_type == "read", "next_read_jump must be called with jump_type = read"
         assert t0 != t1, "t0 can not equal t1"
 
         t = t1
         inf = sys.maxsize
         if t0 < t1:  # forward
-            idx = bisect.bisect_right(self.evnt_record, (t0, inf, inf, inf))
-            if idx != len(self.evnt_record):
-                t = min(t1, torch.tensor(self.evnt_record[idx][0], dtype=torch.float64))
+            idx = bisect.bisect_right(self.evnts, (t0, inf, inf, inf))
+            if idx != len(self.evnts):
+                t = min(t1, torch.tensor(self.evnts[idx][0], dtype=torch.float64))
         else:  # backward
-            idx = bisect.bisect_left(self.evnt_record, (t0, -inf, -inf, -inf))
+            idx = bisect.bisect_left(self.evnts, (t0, -inf, -inf, -inf))
             if idx > 0:
-                t = max(t1, torch.tensor(self.evnt_record[idx-1][0], dtype=torch.float64))
+                t = max(t1, torch.tensor(self.evnts[idx-1][0], dtype=torch.float64))
 
         assert t != t0, "t can not equal t0"
         return t
@@ -114,11 +145,11 @@ class ODEJumpFunc(nn.Module):
         dz = torch.zeros(z.shape)
 
         inf = sys.maxsize
-        lid = bisect.bisect_left(self.evnt_record, (t, -inf, -inf, -inf))
-        rid = bisect.bisect_right(self.evnt_record, (t, inf, inf, inf))
+        lid = bisect.bisect_left(self.evnts, (t, -inf, -inf, -inf))
+        rid = bisect.bisect_right(self.evnts, (t, inf, inf, inf))
 
-        dN = torch.zeros(z.shape[:-1] + (self.dim_k,))
-        for evnt in self.evnt_record[lid:rid]:
+        dN = torch.zeros(z.shape[:-1] + (self.dim_N,))
+        for evnt in self.evnts[lid:rid]:
             _, sid, nid, eid = evnt
             dN[sid, nid, eid] += 1
 
@@ -204,12 +235,13 @@ def create_tsave(tmin, tmax, dt, batch_record, evnt_align=False):
 
 def forward_pass(func, z0, tspan, dt, batch):
     # merge the sequences to create a sequence
+    # t(ime)s(equence)n(ode)e(vent)
     batch_record = sorted([(record[0],) + (sid,) + record[1:]
                            for sid in range(len(batch)) for record in batch[sid]])
 
     # set up grid
     tsave, gtid, evnt_record, tsne = create_tsave(tspan[0], tspan[1], dt, batch_record, args.evnt_align)
-    func.evnt_record = evnt_record
+    func.set_evnts(evnts=evnt_record)
 
     # forward pass
     trace = odeint(func, z0.repeat(len(batch), 1, 1), tsave, method='jump_adams', rtol=1.0e-6, atol=1.0e-8)
@@ -282,7 +314,7 @@ if __name__ == '__main__':
     G = nx.Graph()
     G.add_node(0)
 
-    dim_c, dim_h, dim_k, dt, tspan = 3, 2, 1, 0.05, (0.0, 100.0)
+    dim_c, dim_h, dim_N, dt, tspan = 3, 2, 1, 0.05, (0.0, 100.0)
     path = "literature_review/MultiVariatePointProcess/experiments/data/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv")
     TSVA = read_timeseries(path + args.dataset + "_validation.csv", args.num_validation)
@@ -297,7 +329,7 @@ if __name__ == '__main__':
 
     # initialize / load model
     torch.manual_seed(0)
-    func = ODEJumpFunc(dim_c, dim_h, dim_k, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, activation=nn.CELU(), graph=G)
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, activation=nn.CELU(), graph=G)
     if args.restart:
         checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])

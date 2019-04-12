@@ -79,18 +79,18 @@ class GCU(nn.Module):
         nn.init.uniform_(self.out.bias, a=-0.1, b=0.1)
 
         if aggregation is None:
-            self.aggregation = lambda vnbr: vnbr.sum(dim=1)
+            self.aggregation = lambda vnbr: vnbr.sum(dim=-2)
         else:
             self.aggregation = aggregation
 
     def forward(self, z, z_):
-        assert len(z.shape) == 2,  'z need to be  2 dimensional vector accessed by [seq_id,         dim_id]'
-        assert len(z_.shape) == 3, 'z_ need to be 3 dimensional vector accessed by [seq_id, nbr_id, dim_id]'
+        assert len(z.shape) >= 1,  'z  need to be >=1 dimensional vector accessed by [...         dim_id]'
+        assert len(z_.shape) >= 2, 'z_ need to be >=2 dimensional vector accessed by [... nbr_id, dim_id]'
 
         v = self.cur(z)
-        v_ = torch.zeros(v.shape) if z_.shape[1] == 0 else self.aggregation(self.nbr(torch.cat((z.unsqueeze(1).repeat(1, z_.shape[1], 1), z_), dim=2)))
+        v_ = torch.zeros(v.shape) if z_.shape[-2] == 0 else self.aggregation(self.nbr(torch.cat((z.unsqueeze(-2).expand(z_.shape), z_), dim=-1)))
 
-        dc = self.out(torch.cat((v, v_), dim=1))
+        dc = self.out(torch.cat((v, v_), dim=-1))
 
         return dc
 

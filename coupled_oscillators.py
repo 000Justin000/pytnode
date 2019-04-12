@@ -36,9 +36,9 @@ class COFunc(nn.Module):
         super(COFunc, self).__init__()
 
         self.p = p
-        self.setup_graph(graph, m, k)
+        self.set_graph(graph, m, k)
 
-    def setup_graph(self, graph=None, m=1.0, k=1.0):
+    def set_graph(self, graph=None, m=1.0, k=1.0):
 
         if graph:
             self.graph = graph
@@ -87,9 +87,9 @@ class ODEFunc(nn.Module):
         super(ODEFunc, self).__init__()
 
         self.F = GCU(dim_z, 0, dim_hidden, num_hidden, activation, aggregation)
-        self.setup_graph(graph)
+        self.set_graph(graph)
 
-    def setup_graph(self, graph=None):
+    def set_graph(self, graph=None):
 
         if graph:
             self.graph = graph
@@ -172,7 +172,7 @@ if __name__ == '__main__':
     # set up the coupled-oscillator function, update the graph
     G0 = nx.complete_graph(10)
     cofunc = COFunc(dim_p)
-    cofunc.setup_graph(G0)
+    cofunc.set_graph(G0)
 
     # simulate the validation trace
     trajs_va = cotrace(cofunc, num_seqs, tsave)
@@ -238,8 +238,8 @@ if __name__ == '__main__':
         # first sample the number of particles, then sample the trace
         num_vertices = random.randint(1, 6)
         G = nx.complete_graph(num_vertices)
-        cofunc.setup_graph(G)
-        func.setup_graph(G)
+        cofunc.set_graph(G)
+        func.set_graph(G)
         trajs_tr = cotrace(cofunc, args.batch_size, tsave)
 
         # compute the loss and go down the gradient
@@ -255,7 +255,7 @@ if __name__ == '__main__':
         # validate and visualize
         if it % args.nsave == 0:
 
-            func.setup_graph(G0)
+            func.set_graph(G0)
             loss = compute_loss(trajs_va, visualization=True, it=it)
 
             print('Iter: {}, validation elbo: {:.4f}'.format(it, -loss.item()), flush=True)
@@ -268,6 +268,6 @@ if __name__ == '__main__':
                         'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
 
     # compute validation loss again in the end
-    func.setup_graph(G0)
+    func.set_graph(G0)
     loss = compute_loss(trajs_va, visualization=True, it=it)
     print('Iter: {}, validation elbo: {:.4f}'.format(it, -loss.item()), flush=True)
