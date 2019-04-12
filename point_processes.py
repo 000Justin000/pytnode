@@ -84,7 +84,7 @@ class ODEJumpFunc(nn.Module):
     def next_simulated_jump(self, t0, z0, t1):
 
         if not self.evnt_align:
-            m = torch.distributions.Exponential(self.L(z0))
+            m = torch.distributions.Exponential(self.L(z0).double())
             # next arrival time
             tt = t0 + m.sample()
             tt_min = tt.min()
@@ -329,7 +329,7 @@ if __name__ == '__main__':
 
     # initialize / load model
     torch.manual_seed(0)
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, activation=nn.CELU(), graph=G)
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), graph=G)
     if args.restart:
         checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
@@ -392,11 +392,11 @@ if __name__ == '__main__':
 
 
     # simulate for validation set
-    func.jump_type = "simulate"
+    func.set_evnts(jump_type="simulate")
     tsave, trace, lmbda, gitd, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=1), tspan, dt, [[]]*len(TSVA))
     visualize(tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSVA)), it, "simulate")
 
     # computing testing error
-    func.jump_type = "read"
+    func.set_evnts(jump_type="read")
     tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=1), tspan, dt, TSTE)
     print("iter: {}, testing loss: {:.4f}".format(it, loss.item()/len(TSTE)))

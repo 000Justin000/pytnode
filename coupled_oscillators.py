@@ -7,6 +7,7 @@ import bisect
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
+import gc
 
 import torch
 import torch.nn as nn
@@ -151,6 +152,8 @@ def visualize(trace, it=0, num_seqs=sys.maxsize, appendix=""):
             plt.savefig(args.dataset + args.suffix + '/{:06d}_{:03d}_{:04d}'.format(it, sid, tid) + appendix, dpi=250)
             fig.clf()
             plt.close(fig)
+            del fig
+            gc.collect()
 
 
 if __name__ == '__main__':
