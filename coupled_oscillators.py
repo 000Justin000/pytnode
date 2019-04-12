@@ -30,7 +30,6 @@ parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--debug', dest='debug', action='store_true')
 args = parser.parse_args()
 
-mem = virtual_memory()
 
 class COFunc(nn.Module):
 
