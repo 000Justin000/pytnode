@@ -176,11 +176,8 @@ if __name__ == '__main__':
     cofunc.setup_graph(G0)
 
     # simulate the validation trace
-    print(mem.total)
     trajs_va = cotrace(cofunc, num_seqs, tsave)
-    print(mem.total)
     visualize(trajs_va[nts:, :, :, dim_p:dim_p*2], it=0, num_seqs=3)
-    print(mem.total)
 
     # define encoder and decoder networks
     func = ODEFunc(dim_z, dim_hidden=20, num_hidden=0, activation=nn.CELU())
@@ -233,8 +230,6 @@ if __name__ == '__main__':
         return loss
 
     loss_meter = RunningAverageMeter()
-
-    print(mem.total)
 
     it = it0
     while it < args.niters:
