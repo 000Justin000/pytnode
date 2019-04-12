@@ -30,6 +30,7 @@ parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--debug', dest='debug', action='store_true')
 args = parser.parse_args()
 
+mem = virtual_memory()
 
 class COFunc(nn.Module):
 
@@ -152,8 +153,6 @@ def visualize(trace, it=0, num_seqs=sys.maxsize, appendix=""):
             plt.savefig(args.dataset + args.suffix + '/{:06d}_{:03d}_{:04d}'.format(it, sid, tid) + appendix, dpi=250)
             fig.clf()
             plt.close(fig)
-            del fig
-            gc.collect()
 
 
 if __name__ == '__main__':
@@ -178,8 +177,11 @@ if __name__ == '__main__':
     cofunc.setup_graph(G0)
 
     # simulate the validation trace
+    print(mem.total)
     trajs_va = cotrace(cofunc, num_seqs, tsave)
+    print(mem.total)
     visualize(trajs_va[nts:, :, :, dim_p:dim_p*2], it=0, num_seqs=3)
+    print(mem.total)
 
     # define encoder and decoder networks
     func = ODEFunc(dim_z, dim_hidden=20, num_hidden=0, activation=nn.CELU())
@@ -233,6 +235,8 @@ if __name__ == '__main__':
 
     loss_meter = RunningAverageMeter()
 
+    print(mem.total)
+
     it = it0
     while it < args.niters:
         # clear out gradients for variables
@@ -269,6 +273,7 @@ if __name__ == '__main__':
                         'dec_state_dict':  dec.state_dict(),
                         'optimizer_state_dict':  optimizer.state_dict(),
                         'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
+        gc.collect()
 
     # compute validation loss again in the end
     func.setup_graph(G0)
