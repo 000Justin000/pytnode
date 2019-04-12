@@ -7,6 +7,7 @@ import bisect
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
+import gc
 
 import torch
 import torch.nn as nn
@@ -151,6 +152,8 @@ def visualize(trace, it=0, num_seqs=sys.maxsize, appendix=""):
             plt.savefig(args.dataset + args.suffix + '/{:06d}_{:03d}_{:04d}'.format(it, sid, tid) + appendix, dpi=250)
             fig.clf()
             plt.close(fig)
+            del fig
+            gc.collect()
 
 
 if __name__ == '__main__':
@@ -179,7 +182,7 @@ if __name__ == '__main__':
     visualize(trajs_va[nts:, :, :, dim_p:dim_p*2], it=0, num_seqs=3)
 
     # define encoder and decoder networks
-    func = ODEFunc(dim_z, dim_hidden=20, num_hidden=1, activation=nn.CELU())
+    func = ODEFunc(dim_z, dim_hidden=20, num_hidden=0, activation=nn.CELU())
     enc = RNN(dim_p, dim_z*2, dim_hidden, 0, nn.Tanh())
     dec = MLP(dim_z, dim_p, dim_hidden, 1, nn.CELU())
 
