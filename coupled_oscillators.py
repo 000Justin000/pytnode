@@ -157,13 +157,13 @@ def visualize(trace, it=0, num_seqs=sys.maxsize, appendix=""):
 
 
 if __name__ == '__main__':
-    signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
+    # signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
 
     # fix seeding for randomness
     if args.debug:
-        random.seed(1)
-        np.random.seed(1)
-        torch.manual_seed(1)
+        random.seed(0)
+        np.random.seed(0)
+        torch.manual_seed(0)
 
     # num_seqs : number of validation examples
     num_seqs, dim_p, dim_z, dim_hidden, dt, tspan = 500, 2, 5, 20, 0.05, (-10.0, 20.0)
