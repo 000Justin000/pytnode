@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import networkx as nx
-from torchdiffeq import odeint
+from torchdiffeq import odeint_adjoint as odeint
 from utils import MLP, GCU, RNN, RunningAverageMeter
 
 
@@ -220,7 +220,7 @@ if __name__ == '__main__':
         epsilon = torch.randn(qz0_mean.shape)
 
         z0 = epsilon * torch.exp(0.5 * qz0_logvar) + qz0_mean
-        pred_z = odeint(func, z0, tsave[nts:])
+        pred_z = odeint(func, z0, tsave[nts:], method='adams', rtol=1.0e-5, atol=1.0e-7)
         pred_x = dec(pred_z)
 
         if visualization:
