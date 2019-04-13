@@ -1,3 +1,4 @@
+import os
 import sys
 import signal
 import argparse
@@ -7,7 +8,6 @@ import bisect
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
-import gc
 
 import torch
 import torch.nn as nn
@@ -15,6 +15,13 @@ import torch.optim as optim
 import networkx as nx
 from torchdiffeq import odeint
 from utils import MLP, GCU, RNN, RunningAverageMeter
+
+
+import gc
+import psutil
+from pympler import tracker
+
+process = psutil.Process(os.getpid())
 
 parser = argparse.ArgumentParser('coupled_osciallators')
 parser.add_argument('--niters', type=int, default=100)
@@ -152,12 +159,11 @@ def visualize(trace, it=0, num_seqs=sys.maxsize, appendix=""):
             plt.savefig(args.dataset + args.suffix + '/{:06d}_{:03d}_{:04d}'.format(it, sid, tid) + appendix, dpi=250)
             fig.clf()
             plt.close(fig)
-            del fig
-            gc.collect()
 
 
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
+    tr = tracker.SummaryTracker()
 
     # fix seeding for randomness
     if args.debug:
@@ -269,7 +275,6 @@ if __name__ == '__main__':
                         'dec_state_dict':  dec.state_dict(),
                         'optimizer_state_dict':  optimizer.state_dict(),
                         'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
-        gc.collect()
 
     # compute validation loss again in the end
     func.set_graph(G0)
