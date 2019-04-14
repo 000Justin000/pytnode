@@ -178,7 +178,7 @@ if __name__ == '__main__':
     nts = (tsave < 0).sum()
 
     # set up the coupled-oscillator function, update the graph
-    G0 = nx.complete_graph(10)
+    G0 = nx.complete_graph(3)
     cofunc = COFunc(dim_p)
     cofunc.set_graph(G0)
 
