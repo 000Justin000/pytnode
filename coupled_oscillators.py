@@ -203,7 +203,8 @@ if __name__ == '__main__':
         func.load_state_dict(checkpoint['func_state_dict'])
         enc.load_state_dict(checkpoint['enc_state_dict'])
         dec.load_state_dict(checkpoint['dec_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if 'optimizer_state_dict' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         it0 = checkpoint['it0']
     else:
         it0 = 0
