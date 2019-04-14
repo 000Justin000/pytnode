@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import networkx as nx
-from torchdiffeq import odeint_adjoint as odeint
+from torchdiffeq import odeint as odeint
 from utils import MLP, GCU, RNN, RunningAverageMeter
 
 
