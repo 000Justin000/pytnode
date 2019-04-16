@@ -17,12 +17,6 @@ from torchdiffeq import odeint_adjoint as odeint
 from utils import MLP, GCU, RNN, RunningAverageMeter
 
 
-import gc
-import psutil
-from pympler import tracker
-
-process = psutil.Process(os.getpid())
-
 parser = argparse.ArgumentParser('coupled_osciallators')
 parser.add_argument('--niters', type=int, default=100)
 parser.add_argument('--paramr', type=str, default='params.pth')

@@ -23,25 +23,42 @@ parser.add_argument('--paramr', type=str, default='params.pth')
 parser.add_argument('--paramw', type=str, default='params.pth')
 parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--nsave', type=int, default=10)
-parser.add_argument('--dataset', type=str, default='exponential_hawkes')
-parser.add_argument('--suffix', type=str, default='')
 parser.set_defaults(restart=False, evnt_align=False)
 parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
 parser.add_argument('--debug', dest='debug', action='store_true')
 args = parser.parse_args()
 
-outpath = create_outpath(args.dataset)
+outpath = create_outpath('book_order')
 commit = subprocess.check_output("git log --pretty=format:\'%h\' -n 1", shell=True).decode()
 sys.stdout = open(outpath + '/' + commit + '.log', 'w')
 sys.stderr = open(outpath + '/' + commit + '.err', 'w')
 
 
-def read_timeseries(filename, num_seqs=sys.maxsize):
-    with open(filename) as f:
-        seqs = f.readlines()[:num_seqs]
-    return [[(float(t), vid, 0) for vid, vts in enumerate(seq.split(";")) for t in vts.split()] for seq in seqs]
+def read_orderbook():
+    from scipy.interpolate import CubicSpline
 
+    def price_spline(msg, odb):
+        x = msg[:, 0] - 34200.0
+        y = (odb[:, 0]+odb[:, 1])/2.0
+        _, uid = np.unique(x, return_index=True)
+        return CubicSpline(x[uid], y[uid])  # fix starting here
+
+    msg_full = np.loadtxt('./data/order_book/AMZN_2012-06-21_34200000_57600000_message_1.csv', delimiter=',')
+    odb_full = np.loadtxt('./data/order_book/AMZN_2012-06-21_34200000_57600000_orderbook_1.csv', delimiter=',')
+
+    cs_full = price_spline(msg_full, odb_full)
+
+    edges = np.searchsorted(msg_full[:, 0], np.linspace(34200, 57600, num=391, endpoint=True))[1:-1]
+
+    msgs = np.split(msg_full, edges)
+
+    xx = np.linspace(0.0, 60.0, num=1201, endpoint=True)
+
+    evnt_seqs = list(map(lambda seq: [(record[0], 0, round(float(record[5]+1.0)/2.0)) for record in seq], msgs))
+    pctc_seqs = [CubicSpline(xx, cs_full(xx, cs_full(34200.0+i*60.0+xx)/cs_full(34200.0+i*60.0)-1.0)) for i in range(390)]
+
+read_orderbook()
 
 def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch_id, itr, appendix=""):
     for sid in range(trace.shape[1]):
