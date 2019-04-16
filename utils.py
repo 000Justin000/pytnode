@@ -9,7 +9,7 @@ import networkx as nx
 class RunningAverageMeter(object):
     """Computes and stores the average and current value"""
 
-    def __init__(self, momentum=0.90):
+    def __init__(self, momentum=0.99):
         self.vals = []
         self.momentum = momentum
         self.reset()

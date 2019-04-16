@@ -1,12 +1,12 @@
 import os
 import sys
+import subprocess
 import signal
 import argparse
 import random
 import numpy as np
 import bisect
 import matplotlib
-matplotlib.use('agg')
 import matplotlib.pyplot as plt
 
 import torch
@@ -14,8 +14,10 @@ import torch.nn as nn
 import torch.optim as optim
 import networkx as nx
 from torchdiffeq import odeint_adjoint as odeint
-from utils import MLP, GCU, RNN, RunningAverageMeter
+from utils import MLP, GCU, RNN, RunningAverageMeter, create_outpath
 
+
+signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
 
 parser = argparse.ArgumentParser('coupled_osciallators')
 parser.add_argument('--niters', type=int, default=100)
@@ -24,12 +26,19 @@ parser.add_argument('--paramw', type=str, default='params.pth')
 parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--nsave', type=int, default=10)
 parser.add_argument('--num_validation', type=int, default=100)
-parser.add_argument('--dataset', type=str, default='three_body')
 parser.add_argument('--suffix', type=str, default='')
-parser.set_defaults(restart=False, debug=False)
+parser.set_defaults(restart=False, seed0=False, debug=False)
 parser.add_argument('--restart', dest='restart', action='store_true')
+parser.add_argument('--seed0', dest='seed0', action='store_true')
 parser.add_argument('--debug', dest='debug', action='store_true')
 args = parser.parse_args()
+
+outpath = create_outpath('three_body')
+commit = subprocess.check_output("git log --pretty=format:\'%h\' -n 1", shell=True).decode()
+if not args.debug:
+    matplotlib.use('agg')
+    sys.stdout = open(outpath + '/' + commit + '.log', 'w')
+    sys.stderr = open(outpath + '/' + commit + '.err', 'w')
 
 
 class COFunc(nn.Module):
@@ -150,16 +159,17 @@ def visualize(trace, it=0, num_seqs=sys.maxsize, appendix=""):
 
             plt.scatter(trace[tid, sid, :, 0].detach().numpy(), trace[tid, sid, :, 1].detach().numpy(), c=range(trace.shape[2]))
 
-            plt.savefig(args.dataset + args.suffix + '/{:06d}_{:03d}_{:04d}'.format(it, sid, tid) + appendix, dpi=250)
+            plt.savefig(outpath + '/{:06d}_{:03d}_{:04d}'.format(it, sid, tid) + appendix, dpi=250)
             fig.clf()
             plt.close(fig)
 
 
 if __name__ == '__main__':
-    # signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
+    # write all parameters to output file
+    print(args, flush=True)
 
     # fix seeding for randomness
-    if args.debug:
+    if args.seed0:
         random.seed(0)
         np.random.seed(0)
         torch.manual_seed(0)
@@ -193,7 +203,7 @@ if __name__ == '__main__':
 
     # initialize / load model
     if args.restart:
-        checkpoint = torch.load(args.dataset + args.suffix + "/" + args.paramr)
+        checkpoint = torch.load(outpath + "/" + args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
         enc.load_state_dict(checkpoint['enc_state_dict'])
         dec.load_state_dict(checkpoint['dec_state_dict'])
@@ -268,7 +278,7 @@ if __name__ == '__main__':
                         'enc_state_dict':  enc.state_dict(),
                         'dec_state_dict':  dec.state_dict(),
                         'optimizer_state_dict':  optimizer.state_dict(),
-                        'it0': it}, args.dataset + args.suffix + '/' + args.paramw)
+                        'it0': it}, outpath + '/' + args.paramw)
 
     # compute validation loss again in the end
     func.set_graph(G0)

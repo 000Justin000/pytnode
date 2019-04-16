@@ -5,7 +5,6 @@ import argparse
 import random
 import numpy as np
 import matplotlib
-matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -13,6 +12,7 @@ import torch.optim as optim
 import networkx as nx
 from torchdiffeq import odeint_adjoint as odeint
 from utils import RunningAverageMeter, ODEJumpFunc, create_outpath
+
 
 signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
 
@@ -25,16 +25,20 @@ parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--nsave', type=int, default=10)
 parser.add_argument('--dataset', type=str, default='exponential_hawkes')
 parser.add_argument('--suffix', type=str, default='')
-parser.set_defaults(restart=False, evnt_align=False)
+
+parser.set_defaults(restart=False, evnt_align=False, seed0=False, debug=False)
 parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
+parser.add_argument('--seed0', dest='seed0', action='store_true')
 parser.add_argument('--debug', dest='debug', action='store_true')
 args = parser.parse_args()
 
 outpath = create_outpath(args.dataset)
 commit = subprocess.check_output("git log --pretty=format:\'%h\' -n 1", shell=True).decode()
-sys.stdout = open(outpath + '/' + commit + '.log', 'w')
-sys.stderr = open(outpath + '/' + commit + '.err', 'w')
+if not args.debug:
+    matplotlib.use('agg')
+    sys.stdout = open(outpath + '/' + commit + '.log', 'w')
+    sys.stderr = open(outpath + '/' + commit + '.err', 'w')
 
 
 def read_timeseries(filename, num_seqs=sys.maxsize):
@@ -123,7 +127,7 @@ def forward_pass(func, z0, tspan, dt, batch):
     func.set_evnts(evnts=evnt_record)
 
     # forward pass
-    trace = odeint(func, z0.repeat(len(batch), 1, 1), tsave, method='jump_adams', rtol=1.0e-6, atol=1.0e-8)
+    trace = odeint(func, z0.repeat(len(batch), 1, 1), tsave, method='jump_adams', rtol=1.0e-5, atol=1.0e-7)
     lmbda = func.L(trace)
     loss = -(sum([torch.log(lmbda[record]) for record in tsne]) - (lmbda[gtid, :, :, :] * dt).sum())
 
@@ -188,10 +192,10 @@ def self_inhibiting_lmbda(tmin, tmax, dt, mu, beta, TS):
 
 if __name__ == '__main__':
     # write all parameters to output file
-    print('parameters:    ', args)
+    print(args, flush=True)
 
     # fix seeding for randomness
-    if args.debug:
+    if args.seed0:
         random.seed(0)
         np.random.seed(0)
         torch.manual_seed(0)
@@ -285,4 +289,4 @@ if __name__ == '__main__':
     # computing testing error
     func.set_evnts(jump_type="read")
     tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=1), tspan, dt, TSTE)
-    print("iter: {}, testing loss: {:.4f}".format(it, loss.item()/len(TSTE)))
+    print("iter: {}, testing loss: {:.4f}".format(it, loss.item()/len(TSTE)), flush=True)
