@@ -69,7 +69,7 @@ def visualize(tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch
             # plot the intensity function
             if (grid is not None) and (lmbda_real is not None):
                 plt.plot(grid.numpy(), lmbda_real[sid], linewidth=1.0, color="gray")
-            plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=0.7, color="red")
+            plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=0.7)
 
             tsne_current = [record for record in tsne if (record[1] == sid and record[2] == nid)]
             evnt_time = np.array([tsave[record[0]] for record in tsne_current])
@@ -218,7 +218,6 @@ if __name__ == '__main__':
         lmbda_va_real = self_inhibiting_lmbda(tspan[0], tspan[1], dt, 0.5, 0.2, TSVA)
 
     # initialize / load model
-    torch.manual_seed(0)
     func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_hidden=20, num_hidden=0, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), graph=G)
     if args.restart:
         checkpoint = torch.load(outpath + "/" + args.paramr)
