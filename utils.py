@@ -411,8 +411,8 @@ def powerlaw_hawkes_lmbda(tmin, tmax, dt, lmbda0, alpha, beta, sigma, TS, evnt_a
         for ts in TS:
             vv = np.zeros(grid.shape)
             for record in ts:
-                lo = t2tid[cl(record[0]+sigma)]
-                hi = min(t2tid[cl(record[0]+10.0+10.0*sigma)], len(grid))
+                lo = t2tid[cl(min(record[0]+sigma, 100.0))]
+                hi = t2tid[cl(min(record[0]+10.0+10.0*sigma, 100.0))]
                 vv[lo:hi] += alpha * (beta/sigma) * ((grid[lo:hi]-record[0]) / sigma)**(-beta-1)
             lmbda.append(lmbda0 + vv)
 
