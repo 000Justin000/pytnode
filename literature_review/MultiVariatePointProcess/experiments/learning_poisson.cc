@@ -22,18 +22,5 @@ int main(const int argc, const char** argv)
 	std::cout << "Estimated Parameters : " << std::endl;
 	std::cout << poisson.GetParameters().transpose() << std::endl;
 
-    std::ofstream fout;
-    fout.open("simulation.csv"); 
-    for (Sequence sequence: sequences)
-    {
-        for (int u = 0; u < 1; u++)
-        {
-            for (Event evnt: sequence.GetEvents())
-                fout << std::fixed << std::setw(12) << std::setprecision(6) << evnt.time;
-            fout << ";";
-        }
-        fout << "\n";
-    }
-
 	return 0;
 }

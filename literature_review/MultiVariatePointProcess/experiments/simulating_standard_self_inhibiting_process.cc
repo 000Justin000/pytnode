@@ -19,7 +19,10 @@ int main(const int argc, const char** argv)
 	SelfInhibitingProcess inhibiting(num_params, dim);
 	inhibiting.SetParameters(params);
 
-	std::vector<double> vec_T(500, 100.0);
+	unsigned num_sequences = 500;
+    double T = 100.0;
+	std::vector<double> vec_T(num_sequences, T);
+	std::cout << "1. Simulating " << num_sequences << " sequences with " << T << " length each " << std::endl;
 
 	OgataThinning ot(dim);
 	ot.Simulate(inhibiting, vec_T, sequences);
