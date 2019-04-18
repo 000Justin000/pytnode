@@ -203,7 +203,7 @@ if __name__ == '__main__':
 
     # initialize / load model
     if args.restart:
-        checkpoint = torch.load(outpath + "/" + args.paramr)
+        checkpoint = torch.load(args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
         enc.load_state_dict(checkpoint['enc_state_dict'])
         dec.load_state_dict(checkpoint['dec_state_dict'])
