@@ -354,7 +354,7 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align):
 
     def integrate(tt, ll):
         dts = tt[1:] - tt[:-1]
-        return ((ll[:-1, :, :, :] + ll[1:, :, :, :]) / 2.0 * dts.reshape(-1, 1, 1, 1)).sum()
+        return ((ll[:-1, :, :, :] + ll[1:, :, :, :]) / 2.0 * dts.reshape(-1, 1, 1, 1).float()).sum()
 
     loss = -(sum([torch.log(lmbda[record]) for record in tsne]) - integrate(tsave, lmbda))
 

@@ -4,7 +4,7 @@
 #include <iterator>
 #include <Eigen/Dense>
 #include "Sequence.h"
-#include "PlainHawkes.h"
+#include "Poisson.h"
 #include "utils.h"
 
 int main(const int argc, const char** argv)
@@ -12,19 +12,15 @@ int main(const int argc, const char** argv)
 	std::vector<Sequence> sequences;
     ImportFromFileExistingSequences(argv[1], sequences);
 
-	unsigned dim = 1, num_params = dim * (dim + 1);
-	Eigen::MatrixXd beta(dim,dim);
-	beta << 1;
-	PlainHawkes hawkes(num_params, dim, beta);
+	unsigned dim = 1, num_params = dim;
 
-	PlainHawkes::OPTION options;
-	options.method = PlainHawkes::PLBFGS;
-	options.base_intensity_regularizer = PlainHawkes::NONE;
-	options.excitation_regularizer = PlainHawkes::NONE;
-	hawkes.fit(sequences, options);
-	
+	Poisson poisson(num_params, dim);
+
+	std::cout << "2. Fitting Parameters " << std::endl << std::endl;  
+	poisson.fit(sequences);
+
 	std::cout << "Estimated Parameters : " << std::endl;
-	std::cout << hawkes.GetParameters().transpose() << std::endl;
+	std::cout << poisson.GetParameters().transpose() << std::endl;
 
     std::ofstream fout;
     fout.open("simulation.csv"); 
