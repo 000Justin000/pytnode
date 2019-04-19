@@ -8,7 +8,6 @@ import matplotlib
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import networkx as nx
 from utils import RunningAverageMeter, RNN, SoftPlus, create_outpath
 from utils import poisson_lmbda, exponential_hawkes_lmbda, powerlaw_hawkes_lmbda, self_inhibiting_lmbda, visualize
 
@@ -105,7 +104,7 @@ if __name__ == '__main__':
         it0 = 0
 
     optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': h0},
+                            {'params': h0, lr=1.0e-2},
                             ], lr=1e-3, weight_decay=1e-5)
 
     loss_meter = RunningAverageMeter()
