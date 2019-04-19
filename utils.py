@@ -108,20 +108,26 @@ class RNN(nn.Module):
     def __init__(self, dim_in, dim_out, dim_hidden, num_hidden, activation):
         super(RNN, self).__init__()
 
+        self.dim_in = dim_in
+        self.dim_out = dim_out
         self.dim_hidden = dim_hidden
         self.i2h = MLP(dim_in+dim_hidden, dim_hidden, dim_hidden, num_hidden, activation)
         self.h2o = MLP(dim_hidden, dim_out, dim_hidden, num_hidden, activation)
         self.activation = activation
 
-    def forward(self, x):
+    def forward(self, x, h0=None):
         assert len(x.shape) > 2,  'z need to be at least a 2 dimensional vector accessed by [tid ... dim_id]'
 
-        hh = [torch.zeros(x.shape[1:-1] + (self.dim_hidden,))]
+        if h0 is None:
+            hh = [torch.zeros(x.shape[1:-1] + (self.dim_hidden,))]
+        else:
+            hh = [h0]
+
         for i in range(x.shape[0]):
             combined = torch.cat((x[i], hh[-1]), dim=-1)
             hh.append(self.activation(self.i2h(combined)))
 
-        return self.h2o(torch.stack(tuple(hh[1:])))
+        return self.h2o(torch.stack(tuple(hh)))
 
 
 # This function need to be stateless
@@ -270,8 +276,8 @@ def create_outpath(dataset):
 
 
 def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch_id, itr, appendix=""):
-    for sid in range(trace.shape[1]):
-        for nid in range(trace.shape[2]):
+    for sid in range(lmbda.shape[1]):
+        for nid in range(lmbda.shape[2]):
             fig = plt.figure(figsize=(6, 6), facecolor='white')
             axe = plt.gca()
             axe.set_title('Point Process Modeling')
@@ -280,8 +286,9 @@ def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, ts
             axe.set_ylim(-10.0, 10.0)
 
             # plot the state function
-            for dat in list(trace[:, sid, nid, :].detach().numpy().T):
-                plt.plot(tsave.numpy(), dat, linewidth=0.3)
+            if (tsave is not None) and (trace is not None):
+                for dat in list(trace[:, sid, nid, :].detach().numpy().T):
+                    plt.plot(tsave.numpy(), dat, linewidth=0.3)
 
             # plot the state function (backward trace)
             if (tsave_ is not None) and (trace_ is not None):
@@ -293,11 +300,12 @@ def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, ts
                 plt.plot(grid.numpy(), lmbda_real[sid], linewidth=1.0, color="gray")
             plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=0.7)
 
-            tsne_current = [record for record in tsne if (record[1] == sid and record[2] == nid)]
-            evnt_time = np.array([tsave[record[0]] for record in tsne_current])
-            evnt_type = np.array([record[3] for record in tsne_current])
+            if tsne is not None:
+                tsne_current = [record for record in tsne if (record[1] == sid and record[2] == nid)]
+                evnt_time = np.array([tsave[record[0]] for record in tsne_current])
+                evnt_type = np.array([record[3] for record in tsne_current])
+                plt.scatter(evnt_time, np.ones(len(evnt_time)) * 7.0, 2.0, c=evnt_type)
 
-            plt.scatter(evnt_time, np.ones(len(evnt_time)) * 7.0, 2.0, c=evnt_type)
             plt.savefig(outpath + '/{:03d}_{:03d}_{:04d}'.format(batch_id[sid], nid, itr) + appendix, dpi=250)
             fig.clf()
             plt.close(fig)
