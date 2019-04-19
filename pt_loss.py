@@ -40,9 +40,15 @@ if __name__ == '__main__':
     fit_m4_m3 = powerlaw_hawkes_lmbda(tspan[0], tspan[1], dt, 2.466, 0.0, 2.0, 1.0, TS_powerlaw_hawkes, False)
     fit_m4_m4 = self_inhibiting_lmbda(tspan[0], tspan[1], dt, 0.4979, 0.199, TS_self_inhibiting, False)
 
-    lmbda_loss = lambda lmbda1, lmbda2: ((torch.tensor(lmbda1) - torch.tensor(lmbda2)).abs()*dt/100.05/100).sum().float()
+    lmbda_loss = lambda lmbda1, lmbda2: ((torch.tensor(lmbda1).float() - torch.tensor(lmbda2).float()).abs()*dt/100.05/100).sum()
+    lmbda_ratio_loss = lambda lmbda1, lmbda2: (((torch.tensor(lmbda1).float()-torch.tensor(lmbda2).float())/torch.tensor(lmbda2).float()).abs()*dt/100.05/100).sum()
 
     loss = [[lmbda_loss(fit_m1_m1, real_m1), lmbda_loss(fit_m2_m1, real_m2), lmbda_loss(fit_m3_m1, real_m3), lmbda_loss(fit_m4_m1, real_m4)], 
             [lmbda_loss(fit_m1_m2, real_m1), lmbda_loss(fit_m2_m2, real_m2), lmbda_loss(fit_m3_m2, real_m3), lmbda_loss(fit_m4_m2, real_m4)],
             [lmbda_loss(fit_m1_m3, real_m1), lmbda_loss(fit_m2_m3, real_m2), lmbda_loss(fit_m3_m3, real_m3), lmbda_loss(fit_m4_m3, real_m4)],
             [lmbda_loss(fit_m1_m4, real_m1), lmbda_loss(fit_m2_m4, real_m2), lmbda_loss(fit_m3_m4, real_m3), lmbda_loss(fit_m4_m4, real_m4)]]
+
+    ratio_loss = [[lmbda_ratio_loss(fit_m1_m1, real_m1), lmbda_ratio_loss(fit_m2_m1, real_m2), lmbda_ratio_loss(fit_m3_m1, real_m3), lmbda_ratio_loss(fit_m4_m1, real_m4)],
+                  [lmbda_ratio_loss(fit_m1_m2, real_m1), lmbda_ratio_loss(fit_m2_m2, real_m2), lmbda_ratio_loss(fit_m3_m2, real_m3), lmbda_ratio_loss(fit_m4_m2, real_m4)],
+                  [lmbda_ratio_loss(fit_m1_m3, real_m1), lmbda_ratio_loss(fit_m2_m3, real_m2), lmbda_ratio_loss(fit_m3_m3, real_m3), lmbda_ratio_loss(fit_m4_m3, real_m4)],
+                  [lmbda_ratio_loss(fit_m1_m4, real_m1), lmbda_ratio_loss(fit_m2_m4, real_m2), lmbda_ratio_loss(fit_m3_m4, real_m3), lmbda_ratio_loss(fit_m4_m4, real_m4)]]
