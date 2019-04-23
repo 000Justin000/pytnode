@@ -44,7 +44,7 @@ def read_timeseries(filename, num_seqs=sys.maxsize):
     return [[(float(t), vid, 0) for vid, vts in enumerate(seq.split(";")) for t in vts.split()] for seq in seqs]
 
 
-def forward_pass(func, h0, tspan, dt, batch):
+def rnn_forward_pass(func, h0, tspan, dt, batch):
     evnts = sorted([(record[0],) + (sid,) + record[1:] for sid in range(len(batch)) for record in batch[sid]])
 
     tc = lambda t: np.round(np.ceil((t-tspan[0]) / dt) * dt + tspan[0], decimals=8)
@@ -120,7 +120,7 @@ if __name__ == '__main__':
         batch = [TSTR[seqid] for seqid in batch_id]
 
         # forward pass
-        tsave, lmbda, loss = forward_pass(func, h0, tspan, dt, batch)
+        tsave, lmbda, loss = rnn_forward_pass(func, h0, tspan, dt, batch)
         loss_meter.update(loss.item() / len(batch))
         print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg), flush=True)
 
@@ -135,7 +135,7 @@ if __name__ == '__main__':
         # validate and visualize
         if it % args.nsave == 0:
             # use the full validation set for forward pass
-            tsave, lmbda, loss = forward_pass(func, h0, tspan, dt, TSVA)
+            tsave, lmbda, loss = rnn_forward_pass(func, h0, tspan, dt, TSVA)
             print("iter: {}, validation loss: {:.4f}".format(it, loss.item()/len(TSVA)), flush=True)
             visualize(outpath, tsave, None, lmbda, None, None, tsave, lmbda_va_real, None, range(len(TSVA)), it)
 
@@ -144,6 +144,6 @@ if __name__ == '__main__':
 
 
     # computing testing error
-    tsave, lmbda, loss = forward_pass(func, h0, tspan, dt, TSTE)
+    tsave, lmbda, loss = rnn_forward_pass(func, h0, tspan, dt, TSTE)
     print("iter: {}, testing loss: {:.4f}".format(it, loss.item()/len(TSTE)), flush=True)
     visualize(outpath, tsave, None, lmbda, None, None, tsave, lmbda_te_real, None, range(len(TSTE)), it, "testing")
