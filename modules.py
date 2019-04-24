@@ -167,7 +167,9 @@ class ODEFunc(nn.Module):
 # This function need to be stateless
 class ODEJumpFunc(nn.Module):
 
-    def __init__(self, dim_c, dim_h, dim_N, dim_hidden=20, num_hidden=0, activation=nn.CELU(), ortho=False, jump_type="read", evnts=[], evnt_align=False, graph=None, aggregation=None):
+    def __init__(self, dim_c, dim_h, dim_N, dim_hidden=20, num_hidden=0, activation=nn.CELU(), ortho=False,
+                 jump_type="read", evnts=[], evnt_align=False, evnt_embed=None,
+                 graph=None, aggregation=None):
         super(ODEJumpFunc, self).__init__()
 
         self.dim_c = dim_c
@@ -180,6 +182,11 @@ class ODEJumpFunc(nn.Module):
         assert (jump_type == "simulate" and len(evnts) == 0) or jump_type == "read"
         self.evnts = evnts
         self.evnt_align = evnt_align
+
+        if evnt_embed is not None:
+            self.evnt_embed = evnt_embed
+        else:
+            self.evnt_embed = lambda k: (torch.arange(0, dim_N) == k).float()
 
         if graph is not None:
             self.F = GCU(dim_c, dim_h, dim_hidden, num_hidden, activation, aggregation, graph)
@@ -242,11 +249,10 @@ class ODEJumpFunc(nn.Module):
         for idx in dN.nonzero():
             # find location and type of event
             loc, k = tuple(idx[:-1]), idx[-1]
-            ne = dN[tuple(idx)].int()
+            ne = int(dN[tuple(idx)])
 
             # encode of event k
-            kv = torch.zeros(self.dim_N)
-            kv[k] = 1
+            kv = self.evnt_embed(k)
 
             # repeat (# of events) times
             sequence.extend([(t,) + tuple(idx)] * ne)
@@ -278,7 +284,7 @@ class ODEJumpFunc(nn.Module):
 
     def read_jump(self, t, z):
         assert self.jump_type == "read", "read_jump must be called with jump_type = read"
-        dz = torch.zeros(z.shape)
+        dz = torch.zeros(z.shape, requires_grad=True)
 
         inf = sys.maxsize
         lid = bisect.bisect_left(self.evnts, (t, -inf, -inf, -inf))
@@ -290,8 +296,7 @@ class ODEJumpFunc(nn.Module):
             loc, k = evnt[1:-1], evnt[-1]
 
             # encode of event k
-            kv = torch.zeros(self.dim_N)
-            kv[k] = 1
+            kv = self.evnt_embed(k)
 
             # add to jump
             dz[loc][self.dim_c:] += self.W(torch.cat((c[loc], kv), dim=-1))
