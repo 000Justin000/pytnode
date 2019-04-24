@@ -15,7 +15,7 @@ CXX := g++
 SRCS = $(wildcard *.cc)
 PROGS = $(patsubst %.cc,%,$(SRCS))
 
-build_dir = ./build
+build_dir = build
 
 TARGET = $(patsubst %,$(build_dir)/%,$(PROGS))
 

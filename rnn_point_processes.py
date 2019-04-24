@@ -8,14 +8,13 @@ import matplotlib
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from modules import RunningAverageMeter, ODEJumpFunc
-from utils import poisson_lmbda, exponential_hawkes_lmbda, powerlaw_hawkes_lmbda, self_inhibiting_lmbda, forward_pass, visualize, create_outpath, read_timeseries
+from modules import RunningAverageMeter, RNN, SoftPlus
+from utils import poisson_lmbda, exponential_hawkes_lmbda, powerlaw_hawkes_lmbda, self_inhibiting_lmbda, visualize, create_outpath, read_timeseries
 
 signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
 
 parser = argparse.ArgumentParser('point_processes')
 parser.add_argument('--niters', type=int, default=100)
-parser.add_argument('--jump_type', type=str, default='none')
 parser.add_argument('--paramr', type=str, default='params.pth')
 parser.add_argument('--paramw', type=str, default='params.pth')
 parser.add_argument('--batch_size', type=int, default=1)
@@ -38,6 +37,25 @@ if not args.debug:
     sys.stderr = open(outpath + '/' + commit + '.err', 'w')
 
 
+def rnn_forward_pass(func, h0, tspan, dt, batch):
+    evnts = sorted([(record[0],) + (sid,) + record[1:] for sid in range(len(batch)) for record in batch[sid]])
+
+    tc = lambda t: np.round(np.ceil((t-tspan[0]) / dt) * dt + tspan[0], decimals=8)
+    grid = np.round(np.arange(tspan[0], tspan[1]+dt, dt), decimals=8)
+    t2tid = {t: tid for tid, t in enumerate(grid)}
+    evnts_vec = torch.zeros(len(grid), len(batch), func.dim_in)
+    for sid, seq in enumerate(batch):
+        for evnt in seq:
+            evnts_vec[t2tid[tc(evnt[0])], sid, evnt[1]] += 1.0
+
+    L = SoftPlus()
+    lmbda = L(func(evnts_vec, h0=h0.repeat(len(batch), 1))[:-1])
+
+    loss = -(sum([torch.log(lmbda[(t2tid[tc(evnt[0])],) + evnt[1:]]) for evnt in evnts]) - (lmbda*dt).sum())
+
+    return torch.tensor(grid), lmbda, loss
+
+
 if __name__ == '__main__':
     # write all parameters to output file
     print(args, flush=True)
@@ -48,7 +66,7 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dt, tspan = 3, 2, 1, 0.05, (0.0, 100.0)
+    dim_h, dim_N, dt, tspan = 20, 1, 0.05, (0.0, 100.0)
     path = "./data/point_processes/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv")
     TSVA = read_timeseries(path + args.dataset + "_validation.csv")
@@ -68,74 +86,57 @@ if __name__ == '__main__':
         lmbda_te_real = self_inhibiting_lmbda(tspan[0], tspan[1], dt, 0.5, 0.2, TSTE, args.evnt_align)
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_hidden=20, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
+    func = RNN(dim_N, dim_N, dim_hidden=dim_h, num_hidden=1, activation=nn.Tanh())
     if args.restart:
         checkpoint = torch.load(args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
-        c0 = checkpoint['c0']
         h0 = checkpoint['h0']
         it0 = checkpoint['it0']
     else:
-        c0 = torch.randn(dim_c, requires_grad=True)
-        h0 = torch.zeros(dim_h)
+        h0 = torch.randn(1, dim_h, requires_grad=True)
         it0 = 0
 
     optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': c0, 'lr': 1.0e-2},
+                            {'params': h0, 'lr': 1.0e-2},
                             ], lr=1e-3, weight_decay=1e-5)
 
     loss_meter = RunningAverageMeter()
 
     # if read from history, then fit to maximize likelihood
     it = it0
-    if func.jump_type == "read":
-        while it < args.niters:
-            # clear out gradients for variables
-            optimizer.zero_grad()
+    while it < args.niters:
+        # clear out gradients for variables
+        optimizer.zero_grad()
 
-            # sample a mini-batch, create a grid based on that
-            batch_id = np.random.choice(len(TSTR), args.batch_size, replace=False)
-            batch = [TSTR[seqid] for seqid in batch_id]
+        # sample a mini-batch, create a grid based on that
+        batch_id = np.random.choice(len(TSTR), args.batch_size, replace=False)
+        batch = [TSTR[seqid] for seqid in batch_id]
 
-            # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align)
-            loss_meter.update(loss.item() / len(batch))
-            print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg), flush=True)
+        # forward pass
+        tsave, lmbda, loss = rnn_forward_pass(func, h0, tspan, dt, batch)
+        loss_meter.update(loss.item() / len(batch))
+        print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg), flush=True)
 
-            # backward prop
-            func.backtrace.clear()
-            loss.backward()
+        # backward prop
+        loss.backward()
 
-            # step
-            optimizer.step()
+        # step
+        optimizer.step()
 
-            it = it+1
+        it = it+1
 
-            # validate and visualize
-            if it % args.nsave == 0:
-                # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align)
-                print("iter: {}, validation loss: {:.4f}".format(it, loss.item()/len(TSVA)), flush=True)
+        # validate and visualize
+        if it % args.nsave == 0:
+            # use the full validation set for forward pass
+            tsave, lmbda, loss = rnn_forward_pass(func, h0, tspan, dt, TSVA)
+            print("iter: {}, validation loss: {:.4f}".format(it, loss.item()/len(TSVA)), flush=True)
+            visualize(outpath, tsave, None, lmbda, None, None, tsave, lmbda_va_real, None, range(len(TSVA)), it)
 
-                # backward prop
-                func.backtrace.clear()
-                loss.backward()
-
-                # visualize
-                tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
-                trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, tsave[gtid], lmbda_va_real, tsne, range(len(TSVA)), it)
-
-                # save
-                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it}, outpath + '/' + args.paramw)
+            # save
+            torch.save({'func_state_dict': func.state_dict(), 'h0': h0, 'it0': it}, outpath + '/' + args.paramw)
 
 
     # computing testing error
-    tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align)
-    visualize(outpath, tsave, trace, lmbda, None, None, tsave[gtid], lmbda_te_real, tsne, range(len(TSTE)), it, "testing")
+    tsave, lmbda, loss = rnn_forward_pass(func, h0, tspan, dt, TSTE)
     print("iter: {}, testing loss: {:.4f}".format(it, loss.item()/len(TSTE)), flush=True)
-
-    # simulate events
-    func.jump_type="simulate"
-    tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align)
-    visualize(outpath, tsave, trace, lmbda, None, None, None, None, tsne, range(10), it, "simulate")
+    visualize(outpath, tsave, None, lmbda, None, None, tsave, lmbda_te_real, None, range(len(TSTE)), it, "testing")
