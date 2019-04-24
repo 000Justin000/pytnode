@@ -1,4 +1,5 @@
 import os
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -22,53 +23,53 @@ def create_outpath(dataset):
 
 def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch_id, itr, appendix=""):
     for sid in range(lmbda.shape[1]):
-        for nid in range(lmbda.shape[2]):
-            fig = plt.figure(figsize=(6, 6), facecolor='white')
-            axe = plt.gca()
-            axe.set_title('Point Process Modeling')
-            axe.set_xlabel('time')
-            axe.set_ylabel('intensity')
-            axe.set_ylim(-10.0, 10.0)
+        fig = plt.figure(figsize=(6, 6), facecolor='white')
+        axe = plt.gca()
+        axe.set_title('Point Process Modeling')
+        axe.set_xlabel('time')
+        axe.set_ylabel('intensity')
+        axe.set_ylim(-10.0, 10.0)
 
-            # plot the state function
-            if (tsave is not None) and (trace is not None):
-                for dat in list(trace[:, sid, nid, :].detach().numpy().T):
-                    plt.plot(tsave.numpy(), dat, linewidth=0.3)
+        # plot the state function
+        if (tsave is not None) and (trace is not None):
+            for dat in list(trace[:, sid, :].detach().numpy().T):
+                plt.plot(tsave.numpy(), dat, linewidth=0.3)
 
-            # plot the state function (backward trace)
-            if (tsave_ is not None) and (trace_ is not None):
-                for dat in list(trace_[:, sid, nid, :].detach().numpy().T):
-                    plt.plot(tsave_.numpy(), dat, linewidth=0.2, linestyle="dotted", color="black")
+        # plot the state function (backward trace)
+        if (tsave_ is not None) and (trace_ is not None):
+            for dat in list(trace_[:, sid, :].detach().numpy().T):
+                plt.plot(tsave_.numpy(), dat, linewidth=0.2, linestyle="dotted", color="black")
 
-            # plot the intensity function
-            if (grid is not None) and (lmbda_real is not None):
-                plt.plot(grid.numpy(), lmbda_real[sid], linewidth=1.0, color="gray")
-            plt.plot(tsave.numpy(), lmbda[:, sid, nid, :].detach().numpy(), linewidth=0.7)
+        # plot the intensity function
+        if (grid is not None) and (lmbda_real is not None):
+            plt.plot(grid.numpy(), lmbda_real[sid], linewidth=1.0, color="gray")
+        plt.plot(tsave.numpy(), lmbda[:, sid, :].detach().numpy(), linewidth=0.7)
 
-            if tsne is not None:
-                tsne_current = [record for record in tsne if (record[1] == sid and record[2] == nid)]
-                evnt_time = np.array([tsave[record[0]] for record in tsne_current])
-                evnt_type = np.array([record[3] for record in tsne_current])
-                plt.scatter(evnt_time, np.ones(len(evnt_time)) * 7.0, 2.0, c=evnt_type)
+        if tsne is not None:
+            tsne_current = [evnt for evnt in tsne if evnt[1] == sid]
+            # continue...
+            tevnt = np.array([tsave[evnt[0]] for evnt in tsne_current])
+            kevnt = np.array([evnt[2] for evnt in tsne_current])
+            plt.scatter(tevnt, np.ones(len(tevnt)) * 7.0, 2.0, c=kevnt)
 
-            plt.savefig(outpath + '/{:03d}_{:03d}_{:04d}'.format(batch_id[sid], nid, itr) + appendix, dpi=250)
-            fig.clf()
-            plt.close(fig)
+        plt.savefig(outpath + '/{:03d}_{:04d}'.format(batch_id[sid], itr) + appendix, dpi=250)
+        fig.clf()
+        plt.close(fig)
 
 
 # this function takes in a time series and create a grid for modeling it
 # it takes an array of sequences of three tuples, and extend it to four tuple
-def create_tsave(tmin, tmax, dt, batch_record, evnt_align=False):
+def create_tsave(tmin, tmax, dt, evnts_raw, evnt_align=False):
     """
     :param tmin: min time of sequence
     :param tmax: max time of the sequence
     :param dt: step size
-    :param batch_record: 4-tuple (raw_time, sid, nid, eid)
+    :param evnts_raw: tuple (raw_time, ...)
     :param evnt_align: whether to round the event time up to the next grid point
     :return tsave: the time to save state in ODE simulation
     :return gtid: grid time id
-    :return evnt_record: 4-tuple (rounded_time, sid, nid, eid)
-    :return tsne: 4-tuple (event_time_id, sid, nid, eid)
+    :return evnts: tuple (rounded_time, ...)
+    :return tsne: tuple (event_time_id, ...)
     """
 
     if evnt_align:
@@ -76,40 +77,39 @@ def create_tsave(tmin, tmax, dt, batch_record, evnt_align=False):
     else:
         tc = lambda t: t
 
-    evnt_record = [(tc(record[0]),) + record[1:] for record in batch_record if tmin < tc(record[0]) < tmax]
+    evnts = [(tc(evnt[0]),) + evnt[1:] for evnt in evnts_raw if tmin < tc(evnt[0]) < tmax]
 
-    grid = np.round(np.arange(tmin, tmax+dt, dt), decimals=8)
-    evnt = np.array([record[0] for record in evnt_record])
-    tsave = np.sort(np.unique(np.concatenate((grid, evnt))))
+    tgrid = np.round(np.arange(tmin, tmax+dt, dt), decimals=8)
+    tevnt = np.array([evnt[0] for evnt in evnts])
+    tsave = np.sort(np.unique(np.concatenate((tgrid, tevnt))))
     t2tid = {t: tid for tid, t in enumerate(tsave)}
 
     # g(rid)tid
     # t(ime)s(equence)n(ode)e(vent)
-    gtid = [t2tid[t] for t in grid]
-    tsne = [(t2tid[record[0]],) + record[1:] for record in evnt_record]
+    gtid = [t2tid[t] for t in tgrid]
+    tsne = [(t2tid[evnt[0]],) + evnt[1:] for evnt in evnts]
 
-    return torch.tensor(tsave), gtid, evnt_record, tsne
+    return torch.tensor(tsave), gtid, evnts, tsne
 
 
 def forward_pass(func, z0, tspan, dt, batch, evnt_align):
     # merge the sequences to create a sequence
-    # t(ime)s(equence)n(ode)e(vent)
-    batch_record = sorted([(record[0],) + (sid,) + record[1:]
-                           for sid in range(len(batch)) for record in batch[sid]])
+    evnts_raw = sorted([(evnt[0],) + (sid,) + evnt[1:] for sid in range(len(batch)) for evnt in batch[sid]])
 
     # set up grid
-    tsave, gtid, evnt_record, tsne = create_tsave(tspan[0], tspan[1], dt, batch_record, evnt_align)
-    func.set_evnts(evnts=evnt_record)
+    tsave, gtid, evnts, tsne = create_tsave(tspan[0], tspan[1], dt, evnts_raw, evnt_align)
+    func.evnts = evnts
 
     # forward pass
-    trace = odeint(func, z0.repeat(len(batch), 1, 1), tsave, method='jump_adams', rtol=1.0e-5, atol=1.0e-7)
+    trace = odeint(func, z0.repeat(len(batch), 1), tsave, method='jump_adams', rtol=1.0e-5, atol=1.0e-7)
     lmbda = func.L(trace)
 
     def integrate(tt, ll):
-        dts = tt[1:] - tt[:-1]
-        return ((ll[:-1, :, :, :] + ll[1:, :, :, :]) / 2.0 * dts.reshape(-1, 1, 1, 1).float()).sum()
+        lm = (ll[:-1, ...] + ll[1:, ...]) / 2.0
+        dts = (tt[1:] - tt[:-1]).reshape((-1,)+(1,)*(len(lm.shape)-1)).float()
+        return (lm * dts).sum()
 
-    loss = -(sum([torch.log(lmbda[record]) for record in tsne]) - integrate(tsave, lmbda))
+    loss = -(sum([torch.log(lmbda[evnt]) for evnt in tsne]) - integrate(tsave, lmbda))
 
     return tsave, trace, lmbda, gtid, tsne, loss
 
@@ -188,3 +188,9 @@ def self_inhibiting_lmbda(tmin, tmax, dt, mu, beta, TS, evnt_align=False):
         lmbda.append(np.exp(log_lmbda))
 
     return lmbda
+
+
+def read_timeseries(filename, num_seqs=sys.maxsize):
+    with open(filename) as f:
+        seqs = f.readlines()[:num_seqs]
+    return [[(float(t), 0) for t in seq.split(';')[0].split()] for seq in seqs]

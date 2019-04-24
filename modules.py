@@ -177,7 +177,7 @@ class ODEJumpFunc(nn.Module):
 
         assert jump_type in ["simulate", "read"], "invalide jump_type, must be one of [simulate, read]"
         self.jump_type = jump_type
-        assert (jump_type == "simulate" and len(evnts) == 0) or (jump_type == "read" and len(evnts) > 0)
+        assert (jump_type == "simulate" and len(evnts) == 0) or jump_type == "read"
         self.evnts = evnts
         self.evnt_align = evnt_align
 
@@ -189,6 +189,8 @@ class ODEJumpFunc(nn.Module):
         self.G = nn.Sequential(MLP(dim_c, dim_h, dim_hidden, num_hidden, activation), nn.Softplus())
         self.W = nn.ModuleList([MLP(dim_c, dim_h, dim_hidden, num_hidden, activation) for _ in range(dim_N)])
         self.L = nn.Sequential(MLP(dim_c+dim_h, dim_N, dim_hidden, num_hidden, activation), SoftPlus())
+
+        self.backtrace = []
 
     def forward(self, t, z):
         c = z[..., :self.dim_c]
@@ -202,7 +204,7 @@ class ODEJumpFunc(nn.Module):
 
         dhdt = -self.G(c) * h
 
-        return torch.cat((dcdt, dhdt), dim=2)
+        return torch.cat((dcdt, dhdt), dim=-1)
 
     def next_simulated_jump(self, t0, z0, t1):
 

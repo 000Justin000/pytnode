@@ -8,9 +8,8 @@ import matplotlib
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from utils import RunningAverageMeter, RNN, SoftPlus, create_outpath
-from utils import poisson_lmbda, exponential_hawkes_lmbda, powerlaw_hawkes_lmbda, self_inhibiting_lmbda, visualize
-
+from modules import RunningAverageMeter, RNN, SoftPlus
+from utils import poisson_lmbda, exponential_hawkes_lmbda, powerlaw_hawkes_lmbda, self_inhibiting_lmbda, visualize, create_outpath, read_timeseries
 
 signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
 
@@ -38,25 +37,19 @@ if not args.debug:
     sys.stderr = open(outpath + '/' + commit + '.err', 'w')
 
 
-def read_timeseries(filename, num_seqs=sys.maxsize):
-    with open(filename) as f:
-        seqs = f.readlines()[:num_seqs]
-    return [[(float(t), vid, 0) for vid, vts in enumerate(seq.split(";")) for t in vts.split()] for seq in seqs]
-
-
 def rnn_forward_pass(func, h0, tspan, dt, batch):
     evnts = sorted([(record[0],) + (sid,) + record[1:] for sid in range(len(batch)) for record in batch[sid]])
 
     tc = lambda t: np.round(np.ceil((t-tspan[0]) / dt) * dt + tspan[0], decimals=8)
     grid = np.round(np.arange(tspan[0], tspan[1]+dt, dt), decimals=8)
     t2tid = {t: tid for tid, t in enumerate(grid)}
-    evnts_vec = torch.zeros(len(grid), len(batch), 1, func.dim_in)
+    evnts_vec = torch.zeros(len(grid), len(batch), func.dim_in)
     for sid, seq in enumerate(batch):
         for evnt in seq:
-            evnts_vec[t2tid[tc(evnt[0])], sid, evnt[1], evnt[2]] += 1.0
+            evnts_vec[t2tid[tc(evnt[0])], sid, evnt[1]] += 1.0
 
     L = SoftPlus()
-    lmbda = L(func(evnts_vec, h0=h0.repeat(len(batch), 1, 1))[:-1])
+    lmbda = L(func(evnts_vec, h0=h0.repeat(len(batch), 1))[:-1])
 
     loss = -(sum([torch.log(lmbda[(t2tid[tc(evnt[0])],) + evnt[1:]]) for evnt in evnts]) - (lmbda*dt).sum())
 
