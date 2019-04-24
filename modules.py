@@ -187,7 +187,7 @@ class ODEJumpFunc(nn.Module):
             self.F = MLP(dim_c+dim_h, dim_c, dim_hidden, num_hidden, activation)
 
         self.G = nn.Sequential(MLP(dim_c, dim_h, dim_hidden, num_hidden, activation), nn.Softplus())
-        self.W = nn.ModuleList([MLP(dim_c, dim_h, dim_hidden, num_hidden, activation) for _ in range(dim_N)])
+        self.W = MLP(dim_c+dim_N, dim_h, dim_hidden, num_hidden, activation)
         self.L = nn.Sequential(MLP(dim_c+dim_h, dim_N, dim_hidden, num_hidden, activation), SoftPlus())
 
         self.backtrace = []
@@ -238,11 +238,22 @@ class ODEJumpFunc(nn.Module):
         dz = torch.zeros(z.shape)
         sequence = []
 
-        dz[..., self.dim_c:] += torch.matmul(torch.stack([W_(z[..., :self.dim_c]) for W_ in self.W], dim=-1), dN.unsqueeze(-1)).squeeze(-1)
-
+        c = z[..., :self.dim_c]
         for idx in dN.nonzero():
-            for _ in range(dN[tuple(idx)].int()):
-                sequence.append((t,) + tuple(idx))
+            # find location and type of event
+            loc, k = tuple(idx[:-1]), idx[-1]
+            ne = dN[tuple(idx)].int()
+
+            # encode of event k
+            kv = torch.zeros(self.dim_N)
+            kv[k] = 1
+
+            # repeat (# of events) times
+            sequence.extend([(t,) + tuple(idx)] * ne)
+
+            # add to jump
+            dz[loc][self.dim_c:] += self.W(torch.cat((c[loc], kv), dim=-1)) * ne
+
         self.evnts.extend(sequence)
 
         return dz
@@ -273,10 +284,16 @@ class ODEJumpFunc(nn.Module):
         lid = bisect.bisect_left(self.evnts, (t, -inf, -inf, -inf))
         rid = bisect.bisect_right(self.evnts, (t, inf, inf, inf))
 
-        dN = torch.zeros(z.shape[:-1] + (self.dim_N,))
+        c = z[..., :self.dim_c]
         for evnt in self.evnts[lid:rid]:
-            dN[evnt[1:]] += 1
+            # find location and type of event
+            loc, k = evnt[1:-1], evnt[-1]
 
-        dz[..., self.dim_c:] += torch.matmul(torch.stack([W_(z[..., :self.dim_c]) for W_ in self.W], dim=-1), dN.unsqueeze(-1)).squeeze(-1)
+            # encode of event k
+            kv = torch.zeros(self.dim_N)
+            kv[k] = 1
+
+            # add to jump
+            dz[loc][self.dim_c:] += self.W(torch.cat((c[loc], kv), dim=-1))
 
         return dz
