@@ -28,7 +28,7 @@ def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, ts
         axe.set_title('Point Process Modeling')
         axe.set_xlabel('time')
         axe.set_ylabel('intensity')
-        axe.set_ylim(-10.0, 20.0)
+        axe.set_ylim(-10.0, 10.0)
 
         # plot the state function
         if (tsave is not None) and (trace is not None):
