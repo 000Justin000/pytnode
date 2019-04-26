@@ -9,8 +9,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import networkx as nx
-from utils import RunningAverageMeter, ODEJumpFunc, create_outpath
-from utils import forward_pass, visualize
+from modules import RunningAverageMeter, ODEJumpFunc
+from utils import forward_pass, visualize, create_outpath
 
 
 signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
@@ -59,7 +59,7 @@ def read_orderbook():
 
     def evnt_at(i_msg):
         i, msg = i_msg
-        evnt_seq = [(record[0] - (34200.0 + i*60.0), 0, round(float(record[5]+1.0)/2.0))
+        evnt_seq = [(record[0] - (34200.0 + i*60.0), 0 if record[5] == 1 else 1)
                     for record in msg if record[1] == 1.0]
         return evnt_seq
 
@@ -73,6 +73,9 @@ def read_orderbook():
     pctc_seqs = list(map(interp_at, range(390)))
 
     return evnt_seqs, pctc_seqs
+
+
+
 
 
 if __name__ == '__main__':
