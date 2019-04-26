@@ -100,11 +100,11 @@ if __name__ == '__main__':
             # forward pass
             tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align)
             loss_meter.update(loss.item() / len(batch))
-            print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg), flush=True)
 
             # backward prop
             func.backtrace.clear()
             loss.backward()
+            print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg), flush=True)
 
             # step
             optimizer.step()
@@ -115,11 +115,11 @@ if __name__ == '__main__':
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
                 tsave, trace, lmbda, gtid, tsne, loss = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align)
-                print("iter: {}, validation loss: {:.4f}".format(it, loss.item()/len(TSVA)), flush=True)
 
                 # backward prop
                 func.backtrace.clear()
                 loss.backward()
+                print("iter: {}, validation loss: {:.4f}".format(it, loss.item()/len(TSVA)), flush=True)
 
                 # visualize
                 tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
