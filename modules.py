@@ -284,7 +284,7 @@ class ODEJumpFunc(nn.Module):
 
     def read_jump(self, t, z):
         assert self.jump_type == "read", "read_jump must be called with jump_type = read"
-        dz = torch.zeros(z.shape, requires_grad=True)
+        dz = torch.zeros(z.shape)
 
         inf = sys.maxsize
         lid = bisect.bisect_left(self.evnts, (t, -inf, -inf, -inf))
