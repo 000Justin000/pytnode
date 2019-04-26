@@ -104,7 +104,7 @@ if __name__ == '__main__':
             # backward prop
             func.backtrace.clear()
             loss.backward()
-            print("iter: {}, running ave loss: {:.4f}".format(it, loss_meter.avg), flush=True)
+            print("iter: {}, current loss: {:.4f}, running ave loss: {:.4f}".format(it, loss.item()/len(batch), loss_meter.avg), flush=True)
 
             # step
             optimizer.step()
