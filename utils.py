@@ -102,16 +102,32 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align):
 
     # forward pass
     trace = odeint(func, z0.repeat(len(batch), 1), tsave, method='jump_adams', rtol=1.0e-5, atol=1.0e-7)
-    lmbda = func.L(trace)
+    params = func.L(trace)
+    lmbda = params[..., :func.dim_N]
 
     def integrate(tt, ll):
         lm = (ll[:-1, ...] + ll[1:, ...]) / 2.0
         dts = (tt[1:] - tt[:-1]).reshape((-1,)+(1,)*(len(lm.shape)-1)).float()
         return (lm * dts).sum()
 
-    loss = -(sum([torch.log(lmbda[evnt]) for evnt in tsne]) - integrate(tsave, lmbda))
+    log_likelihood = -integrate(tsave, lmbda)
 
-    return tsave, trace, lmbda, gtid, tsne, loss
+    if func.evnt_embedding == "discrete":
+        log_likelihood += sum([torch.log(lmbda[evnt]) for evnt in tsne])
+    if func.evnt_embedding == "continuous":
+        gsmean = params[..., func.dim_N*(1+func.dim_E*0):func.dim_N*(1+func.dim_E*1)].view(params.shape[:-1]+(func.dim_N, func.dim_E))
+        logvar = params[..., func.dim_N*(1+func.dim_E*1):func.dim_N*(1+func.dim_E*2)].view(params.shape[:-1]+(func.dim_N, func.dim_E))
+        var = torch.exp(logvar)
+
+        def log_normal_pdf(loc, k):
+            const = torch.log(torch.tensor(2.0*np.pi))
+            return -0.5*(const + logvar[loc] + (gsmean[loc] - func.evnt_embed(k))**2.0 / var[loc])
+
+        for evnt in tsne:
+            gsdensity = torch.exp(log_normal_pdf(evnt[:-1], evnt[-1]).sum(dim=-1))
+            log_likelihood += torch.log((lmbda[evnt[:-1]] * gsdensity).sum(dim=-1))
+
+    return tsave, trace, lmbda, gtid, tsne, -log_likelihood
 
 
 def poisson_lmbda(tmin, tmax, dt, lmbda0, TS):

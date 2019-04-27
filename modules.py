@@ -30,13 +30,20 @@ class RunningAverageMeter(object):
 # SoftPlus activation function add epsilon
 class SoftPlus(nn.Module):
 
-    def __init__(self, beta=1.0, threshold=20, epsilon=1.0e-15):
+    def __init__(self, beta=1.0, threshold=20, epsilon=1.0e-15, dim=None):
         super(SoftPlus, self).__init__()
         self.Softplus = nn.Softplus(beta, threshold)
         self.epsilon = epsilon
+        self.dim = dim
 
     def forward(self, x):
-        return self.Softplus(x) + self.epsilon
+        # apply softplus to first dim dimension
+        if self.dim is None:
+            result = self.Softplus(x) + self.epsilon
+        else:
+            result = torch.cat((self.Softplus(x[..., :self.dim])+self.epsilon, x[..., self.dim:]), dim=-1)
+
+        return result
 
 
 # multi-layer perceptron
@@ -167,14 +174,15 @@ class ODEFunc(nn.Module):
 # This function need to be stateless
 class ODEJumpFunc(nn.Module):
 
-    def __init__(self, dim_c, dim_h, dim_N, dim_hidden=20, num_hidden=0, activation=nn.CELU(), ortho=False,
-                 jump_type="read", evnts=[], evnt_align=False, evnt_embed=None,
+    def __init__(self, dim_c, dim_h, dim_N, dim_E, dim_hidden=20, num_hidden=0, activation=nn.CELU(), ortho=False,
+                 jump_type="read", evnts=[], evnt_align=False, evnt_embedding="discrete",
                  graph=None, aggregation=None):
         super(ODEJumpFunc, self).__init__()
 
         self.dim_c = dim_c
         self.dim_h = dim_h
-        self.dim_N = dim_N
+        self.dim_N = dim_N  # number of event type
+        self.dim_E = dim_E  # dimension for encoding of event itself
         self.ortho = ortho
 
         assert jump_type in ["simulate", "read"], "invalide jump_type, must be one of [simulate, read]"
@@ -183,11 +191,6 @@ class ODEJumpFunc(nn.Module):
         self.evnts = evnts
         self.evnt_align = evnt_align
 
-        if evnt_embed is not None:
-            self.evnt_embed = evnt_embed
-        else:
-            self.evnt_embed = lambda k: (torch.arange(0, dim_N) == k).float()
-
         if graph is not None:
             self.F = GCU(dim_c, dim_h, dim_hidden, num_hidden, activation, aggregation, graph)
         else:
@@ -195,7 +198,18 @@ class ODEJumpFunc(nn.Module):
 
         self.G = nn.Sequential(MLP(dim_c, dim_h, dim_hidden, num_hidden, activation), nn.Softplus())
         self.W = MLP(dim_c+dim_N, dim_h, dim_hidden, num_hidden, activation)
-        self.L = nn.Sequential(MLP(dim_c+dim_h, dim_N, dim_hidden, num_hidden, activation), SoftPlus())
+
+        if evnt_embedding == "discrete":
+            assert dim_E == dim_N, "if event embedding is discrete, then use one dimension for each event type"
+            self.evnt_embed = lambda k: (torch.arange(0, dim_E) == k).float()
+            # output is a dim_N vector, each represent conditional intensity of a type of event
+            self.L = nn.Sequential(MLP(dim_c+dim_h, dim_N, dim_hidden, num_hidden, activation), SoftPlus())
+        elif evnt_embedding == "continuous":
+            self.evnt_embed = lambda k: torch.tensor(k)
+            # output is a dim_N*(1+2*dim_E) vector, represent coefficients, mean and log variance of dim_N unit gaussian intensity function
+            self.L = nn.Sequential(MLP(dim_c+dim_h, dim_N*(1+2*dim_E), dim_hidden, num_hidden, activation), SoftPlus(dim=dim_N))
+        else:
+            raise Exception('evnt_type must either be discrete or continuous')
 
         self.backtrace = []
 
@@ -216,7 +230,7 @@ class ODEJumpFunc(nn.Module):
     def next_simulated_jump(self, t0, z0, t1):
 
         if not self.evnt_align:
-            m = torch.distributions.Exponential(self.L(z0).double())
+            m = torch.distributions.Exponential(self.L(z0)[..., :self.dim_N].double())
             # next arrival time
             tt = t0 + m.sample()
             tt_min = tt.min()
@@ -251,14 +265,22 @@ class ODEJumpFunc(nn.Module):
             loc, k = tuple(idx[:-1]), idx[-1]
             ne = int(dN[tuple(idx)])
 
-            # encode of event k
-            kv = self.evnt_embed(k)
+            for _ in range(ne):
+                if self.evnt_embedding == "discrete":
+                    # encode of event k
+                    kv = self.evnt_embed(k)
+                    sequence.extend([(t,) + loc + (k,)])
+                elif self.evnt_embedding == "continuous":
+                    params = self.L(z[loc])
+                    gsmean = params[self.dim_N*(1+self.dim_E*0):self.dim_N*(1+self.dim_E*1)]
+                    logvar = params[self.dim_N*(1+self.dim_E*1):self.dim_N*(1+self.dim_E*2)]
+                    gsmean_k = gsmean[self.dim_E*k:self.dim_E*(k+1)]
+                    logvar_k = logvar[self.dim_E*k:self.dim_E*(k+1)]
+                    kv = self.evnt_embed(torch.randn(gsmean_k.shape) * torch.exp(0.5*logvar_k) + gsmean)
+                    sequence.extend([(t,) + loc + (kv,)])
 
-            # repeat (# of events) times
-            sequence.extend([(t,) + tuple(idx)] * ne)
-
-            # add to jump
-            dz[loc][self.dim_c:] += self.W(torch.cat((c[loc], kv), dim=-1)) * ne
+                # add to jump
+                dz[loc][self.dim_c:] += self.W(torch.cat((c[loc], kv), dim=-1))
 
         self.evnts.extend(sequence)
 
