@@ -66,7 +66,7 @@ if __name__ == '__main__':
     TSTR, TSVA, TSTE = TS[:int(nseqs*0.6)], TS[int(nseqs*0.6):int(nseqs*0.8)], TS[int(nseqs*0.8):]
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_hidden=20, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=20, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
@@ -80,7 +80,7 @@ if __name__ == '__main__':
         c0 = checkpoint['c0']
         h0 = checkpoint['h0']
         it0 = checkpoint['it0']
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     loss_meter = RunningAverageMeter()
 

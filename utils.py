@@ -123,9 +123,14 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align):
             const = torch.log(torch.tensor(2.0*np.pi))
             return -0.5*(const + logvar[loc] + (gsmean[loc] - func.evnt_embed(k))**2.0 / var[loc])
 
+        mse = []
         for evnt in tsne:
             gsdensity = torch.exp(log_normal_pdf(evnt[:-1], evnt[-1]).sum(dim=-1))
             log_likelihood += torch.log((lmbda[evnt[:-1]] * gsdensity).sum(dim=-1))
+            # mean_pred embedding
+            mean_pred = (lmbda[evnt[:-1]].view(func.dim_N, 1) * gsmean[evnt[:-1]]).sum(dim=0) / lmbda[evnt[:-1]].sum()
+            mse.append((mean_pred - func.evnt_embed(evnt[-1])).norm()**2.0)
+        print(torch.tensor(mse).mean())
 
     return tsave, trace, lmbda, gtid, tsne, -log_likelihood
 

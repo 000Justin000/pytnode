@@ -216,6 +216,8 @@ class ODEJumpFunc(nn.Module):
         self.backtrace = []
 
     def forward(self, t, z):
+        print(t)
+
         c = z[..., :self.dim_c]
         h = z[..., self.dim_c:]
 
