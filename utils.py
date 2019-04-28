@@ -49,8 +49,8 @@ def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, ts
             tsne_current = [evnt for evnt in tsne if evnt[1] == sid]
             # continue...
             tevnt = np.array([tsave[evnt[0]] for evnt in tsne_current])
-            kevnt = np.array([evnt[2] for evnt in tsne_current])
-            plt.scatter(tevnt, np.ones(len(tevnt)) * 7.0, 2.0, c=kevnt)
+            kevnt = np.array([evnt[2] if not (type(evnt[2]) == list) else evnt[2][0] for evnt in tsne_current])
+            plt.scatter(tevnt, kevnt * 7.0, 0.5)
 
         plt.savefig(outpath + '/{:03d}_{:04d}'.format(batch_id[sid], itr) + appendix, dpi=250)
         fig.clf()

@@ -184,6 +184,7 @@ class ODEJumpFunc(nn.Module):
         self.dim_N = dim_N  # number of event type
         self.dim_E = dim_E  # dimension for encoding of event itself
         self.ortho = ortho
+        self.evnt_embedding = evnt_embedding
 
         assert jump_type in ["simulate", "read"], "invalide jump_type, must be one of [simulate, read]"
         self.jump_type = jump_type
@@ -197,7 +198,6 @@ class ODEJumpFunc(nn.Module):
             self.F = MLP(dim_c+dim_h, dim_c, dim_hidden, num_hidden, activation)
 
         self.G = nn.Sequential(MLP(dim_c, dim_h, dim_hidden, num_hidden, activation), nn.Softplus())
-        self.W = MLP(dim_c+dim_N, dim_h, dim_hidden, num_hidden, activation)
 
         if evnt_embedding == "discrete":
             assert dim_E == dim_N, "if event embedding is discrete, then use one dimension for each event type"
@@ -210,6 +210,8 @@ class ODEJumpFunc(nn.Module):
             self.L = nn.Sequential(MLP(dim_c+dim_h, dim_N*(1+2*dim_E), dim_hidden, num_hidden, activation), SoftPlus(dim=dim_N))
         else:
             raise Exception('evnt_type must either be discrete or continuous')
+
+        self.W = MLP(dim_c+dim_E, dim_h, dim_hidden, num_hidden, activation)
 
         self.backtrace = []
 

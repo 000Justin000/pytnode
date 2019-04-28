@@ -67,20 +67,20 @@ if __name__ == '__main__':
 
     # initialize / load model
     func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_hidden=20, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
+    c0 = torch.randn(dim_c, requires_grad=True)
+    h0 = torch.zeros(dim_h)
+    it0 = 0
+    optimizer = optim.Adam([{'params': func.parameters()},
+                            {'params': c0, 'lr': 1.0e-2},
+                            ], lr=1e-3, weight_decay=1e-5)
+
     if args.restart:
         checkpoint = torch.load(args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
         c0 = checkpoint['c0']
         h0 = checkpoint['h0']
         it0 = checkpoint['it0']
-    else:
-        c0 = torch.randn(dim_c, requires_grad=True)
-        h0 = torch.zeros(dim_h)
-        it0 = 0
-
-    optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': c0, 'lr': 1.0e-2},
-                            ], lr=1e-3, weight_decay=1e-5)
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     loss_meter = RunningAverageMeter()
 
@@ -125,7 +125,7 @@ if __name__ == '__main__':
                 visualize(outpath, tsave, trace, lmbda, tsave_, trace_, None, None, tsne, range(len(TSVA)), it)
 
                 # save
-                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it}, outpath + '/' + args.paramw)
+                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
 
 
     # computing testing error

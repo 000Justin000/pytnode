@@ -50,8 +50,7 @@ def read_twitter(scale=1.0):
     od = np.argsort(np.array([tuple(el[:2]) for el in dat], dtype=[('x', 'i'), ('y', 'f')]))
     dat = dat[od, :]
 
-    num_users = len(np.unique(dat[:, 0]))
-    assert np.all(np.unique(dat[:, 0]) == np.arange(0, num_users) + 1), "user id not from 1 to number-of-users"
+    uid = np.unique(dat[:, 0])
 
     time = dat[:, 1] * scale
     event = dat[:, 2]
@@ -59,11 +58,11 @@ def read_twitter(scale=1.0):
     tmin = time.min()
     tmax = time.max()
 
-    edges = np.searchsorted(dat[:, 0], np.arange(0, num_users+1)+0.5)[1:-1]
+    edges = np.searchsorted(dat[:, 0], np.append(0, uid)+0.5)[1:-1]
     tseqs = np.split(time, edges)
     kseqs = np.split(event, edges)
 
-    evnt_seqs = [[(t-tmin, k) for t, k in zip(tseq, kseq)] for tseq, kseq in zip(tseqs, kseqs)]
+    evnt_seqs = [[(t-tmin, [k]) for t, k in zip(tseq, kseq)] for tseq, kseq in zip(tseqs, kseqs)]
 
     return evnt_seqs, (0.0, tmax-tmin)
 
@@ -78,28 +77,28 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dim_E, dt = 5, 5, 3, 1, 0.05
-    TS, tspan = read_twitter(2.0e-4)
+    dim_c, dim_h, dim_N, dim_E, dt = 5, 5, 3, 1, 1.0/24.0
+    TS, tspan = read_twitter(1.0/24.0/3600.0)
     nseqs = len(TS)
 
     TSTR, TSVA, TSTE = TS[:int(nseqs*0.6)], TS[int(nseqs*0.6):int(nseqs*0.8)], TS[int(nseqs*0.8):]
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=20, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), evnt_embedding="continuous")
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=20, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
+    c0 = torch.randn(dim_c, requires_grad=True)
+    h0 = torch.zeros(dim_h)
+    it0 = 0
+    optimizer = optim.Adam([{'params': func.parameters()},
+                            {'params': c0, 'lr': 1.0e-2},
+                            ], lr=1e-3, weight_decay=1e-5)
+
     if args.restart:
         checkpoint = torch.load(args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
         c0 = checkpoint['c0']
         h0 = checkpoint['h0']
         it0 = checkpoint['it0']
-    else:
-        c0 = torch.randn(dim_c, requires_grad=True)
-        h0 = torch.zeros(dim_h)
-        it0 = 0
-
-    optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': c0, 'lr': 1.0e-2},
-                            ], lr=1e-3, weight_decay=1e-5)
+        # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     loss_meter = RunningAverageMeter()
 
@@ -144,7 +143,7 @@ if __name__ == '__main__':
                 visualize(outpath, tsave, trace, lmbda, tsave_, trace_, None, None, tsne, range(len(TSVA)), it)
 
                 # save
-                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it}, outpath + '/' + args.paramw)
+                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
 
 
     # computing testing error
