@@ -102,7 +102,7 @@ if __name__ == '__main__':
             # backward prop
             func.backtrace.clear()
             loss.backward()
-            print("iter: {}, current loss: {:10.4f}, running ave loss: {:10.4f}, type error: {:10.4f}".format(it, loss.item()/len(batch), loss_meter.avg, mete), flush=True)
+            print("iter: {}, current loss: {:10.4f}, running ave loss: {:10.4f}, type error: {}".format(it, loss.item()/len(batch), loss_meter.avg, mete), flush=True)
 
             # step
             optimizer.step()
@@ -117,7 +117,7 @@ if __name__ == '__main__':
                 # backward prop
                 func.backtrace.clear()
                 loss.backward()
-                print("iter: {}, validation loss: {:10.4f}, type error: {:10.4f}".format(it, loss.item()/len(TSVA), mete), flush=True)
+                print("iter: {}, validation loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSVA), mete), flush=True)
 
                 # visualize
                 tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     # computing testing error
     tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align)
     visualize(outpath, tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSTE)), it, "testing")
-    print("iter: {}, testing loss: {:10.4f}, type error: {:10.4f}".format(it, loss.item()/len(TSTE), mete), flush=True)
+    print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)
 
     # simulate events
     func.jump_type="simulate"

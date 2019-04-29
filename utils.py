@@ -92,13 +92,16 @@ def create_tsave(tmin, tmax, dt, evnts_raw, evnt_align=False):
     return torch.tensor(tsave), gtid, evnts, tsne
 
 
-def forward_pass(func, z0, tspan, dt, batch, evnt_align):
+def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0]):
     # merge the sequences to create a sequence
     evnts_raw = sorted([(evnt[0],) + (sid,) + evnt[1:] for sid in range(len(batch)) for evnt in batch[sid]])
 
     # set up grid
     tsave, gtid, evnts, tsne = create_tsave(tspan[0], tspan[1], dt, evnts_raw, evnt_align)
     func.evnts = evnts
+
+    # convert to numpy array
+    tsavenp = tsave.numpy()
 
     # forward pass
     trace = odeint(func, z0.repeat(len(batch), 1), tsave, method='jump_adams', rtol=1.0e-5, atol=1.0e-7)
@@ -116,7 +119,12 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align):
         et_error = []
         for evnt in tsne:
             log_likelihood += torch.log(lmbda[evnt])
-            et_error.append(0 if lmbda[evnt] == lmbda[evnt[:-1]].max() else 1)
+            type_preds = torch.zeros(len(type_forecast))
+            for tid, t in enumerate(type_forecast):
+                loc = (np.searchsorted(tsavenp, tsave[evnt[0]].item()-t),) + evnt[1:-1]
+                type_preds[tid] = lmbda[loc].argmax().item()
+            et_error.append((type_preds != evnt[-1]).float())
+
     elif func.evnt_embedding == "continuous":
         gsmean = params[..., func.dim_N*(1+func.dim_E*0):func.dim_N*(1+func.dim_E*1)].view(params.shape[:-1]+(func.dim_N, func.dim_E))
         logvar = params[..., func.dim_N*(1+func.dim_E*1):func.dim_N*(1+func.dim_E*2)].view(params.shape[:-1]+(func.dim_N, func.dim_E))
@@ -131,8 +139,11 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align):
             gsdensity = torch.exp(log_normal_pdf(evnt[:-1], evnt[-1]).sum(dim=-1))
             log_likelihood += torch.log((lmbda[evnt[:-1]] * gsdensity).sum(dim=-1))
             # mean_pred embedding
-            mean_pred = (lmbda[evnt[:-1]].view(func.dim_N, 1) * gsmean[evnt[:-1]]).sum(dim=0) / lmbda[evnt[:-1]].sum()
-            et_error.append((mean_pred - func.evnt_embed(evnt[-1])).norm()**2.0)
+            mean_preds = torch.zeros(len(type_forecast), func.dim_E)
+            for tid, t in enumerate(type_forecast):
+                loc = (np.searchsorted(tsavenp, tsave[evnt[0]].item()-t),) + evnt[1:-1]
+                mean_preds[tid] = ((lmbda[loc].view(func.dim_N, 1) * gsmean[loc]).sum(dim=0) / lmbda[loc].sum()).item()
+            et_error.append((mean_preds - func.evnt_embed(evnt[-1])).norm(dim=-1)**2.0)
 
     METE = sum(et_error)/len(et_error)
 
