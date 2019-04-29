@@ -76,7 +76,7 @@ if __name__ == '__main__':
     TSTR, TSVA, TSTE = TS[:int(nseqs*0.85)], TS[int(nseqs*0.85):int(nseqs*0.9)], TS[int(nseqs*0.9):]
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=20, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=32, num_hidden=2, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
