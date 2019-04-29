@@ -77,7 +77,7 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dim_E, dt = 5, 5, 1, 1, 1.0/24.0
+    dim_c, dim_h, dim_N, dim_E, dt = 5, 5, 3, 1, 1.0/24.0
     TS, tspan = read_twitter(1.0/24.0/3600.0)
     nseqs = len(TS)
 
