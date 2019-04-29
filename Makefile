@@ -18,3 +18,6 @@ run_twitter:
 
 run_book_order:
 	taskset --cpu-list 0 python book_order.py --niters 3000 --jump_type read --batch_size 20 --nsave 100 --seed0 &
+
+run_stack_overflow:
+	taskset --cpu-list 1 python stack_overflow.py --niters 3000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
