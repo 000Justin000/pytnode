@@ -36,7 +36,7 @@ if not args.debug:
     sys.stderr = open(outpath + '/' + commit + '.err', 'w')
 
 
-def read_mimic2(scale=1.0):
+def read_mimic2(scale=1.0, h_dt=0.0, t_dt=0.0):
     time_seqs = []
     with open('./data/mimic2/time.txt') as ftime:
         seqs = ftime.readlines()
@@ -54,10 +54,10 @@ def read_mimic2(scale=1.0):
 
     m2mid = {m: mid for mid, m in enumerate(np.unique(sum(mark_seqs, [])))}
 
-    evnt_seqs = [[((time-tmin)*scale, m2mid[mark]) for time, mark in zip(time_seq, mark_seq)] for time_seq, mark_seq in zip(time_seqs, mark_seqs)]
+    evnt_seqs = [[((h_dt+time-tmin)*scale, m2mid[mark]) for time, mark in zip(time_seq, mark_seq)] for time_seq, mark_seq in zip(time_seqs, mark_seqs)]
     random.shuffle(evnt_seqs)
 
-    return evnt_seqs, (0.0, (tmax-tmin)*scale)
+    return evnt_seqs, (0.0, ((tmax+t_dt)-(tmin-h_dt))*scale)
 
 
 if __name__ == '__main__':
@@ -71,7 +71,7 @@ if __name__ == '__main__':
         torch.manual_seed(0)
 
     dim_c, dim_h, dim_N, dt = 10, 10, 75, 0.05
-    TS, tspan = read_mimic2(1.0)
+    TS, tspan = read_mimic2(1.0, 1.0, 1.0)
     nseqs = len(TS)
 
     TSTR, TSVA, TSTE = TS[:int(nseqs*0.85)], TS[int(nseqs*0.85):int(nseqs*0.9)], TS[int(nseqs*0.9):]
