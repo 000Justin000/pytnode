@@ -81,7 +81,7 @@ if __name__ == '__main__':
     TS, tspan = read_twitter(1.0/24.0/3600.0)
     nseqs = len(TS)
 
-    TSTR, TSVA, TSTE = TS[:int(nseqs*0.6)], TS[int(nseqs*0.6):int(nseqs*0.8)], TS[int(nseqs*0.8):]
+    TSTR, TSVA, TSTE = TS[:int(nseqs*0.9)], TS[int(nseqs*0.9):], TS[int(nseqs*0.9):]
 
     # initialize / load model
     func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=20, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
