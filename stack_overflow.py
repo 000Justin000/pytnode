@@ -55,8 +55,9 @@ def read_stackoverflow(scale=1.0):
     m2mid = {m: mid for mid, m in enumerate(np.unique(sum(mark_seqs, [])))}
 
     evnt_seqs = [[((time-tmin)*scale, m2mid[mark]) for time, mark in zip(time_seq, mark_seq)] for time_seq, mark_seq in zip(time_seqs, mark_seqs)]
+    random.shuffle(evnt_seqs)
 
-    return random.shuffle(evnt_seqs), (0.0, (tmax-tmin)*scale)
+    return evnt_seqs, (0.0, (tmax-tmin)*scale)
 
 
 if __name__ == '__main__':

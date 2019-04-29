@@ -63,8 +63,9 @@ def read_twitter(scale=1.0):
     kseqs = np.split(event, edges)
 
     evnt_seqs = [[(t-tmin, [k]) for t, k in zip(tseq, kseq)] for tseq, kseq in zip(tseqs, kseqs)]
+    random.shuffle(evnt_seqs)
 
-    return random.shuffle(evnt_seqs), (0.0, tmax-tmin)
+    return evnt_seqs, (0.0, tmax-tmin)
 
 
 if __name__ == '__main__':
