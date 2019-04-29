@@ -98,7 +98,7 @@ if __name__ == '__main__':
         c0 = checkpoint['c0']
         h0 = checkpoint['h0']
         it0 = checkpoint['it0']
-        # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     loss_meter = RunningAverageMeter()
 

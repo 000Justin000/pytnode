@@ -136,8 +136,9 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0]):
 
         et_error = []
         for evnt in tsne:
-            gsdensity = torch.exp(log_normal_pdf(evnt[:-1], evnt[-1]).sum(dim=-1))
-            log_likelihood += torch.log((lmbda[evnt[:-1]] * gsdensity).sum(dim=-1))
+            gsdensity = torch.exp(log_normal_pdf(evnt[:-1], evnt[-1]).sum(dim=-1)) + 1.0e-32  # add 1.0e-32, make sure the result is not zero
+            tmp = torch.log((lmbda[evnt[:-1]] * gsdensity).sum(dim=-1))
+            log_likelihood += tmp
             # mean_pred embedding
             mean_preds = torch.zeros(len(type_forecast), func.dim_E)
             for tid, t in enumerate(type_forecast):
