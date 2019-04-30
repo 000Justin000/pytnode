@@ -74,7 +74,7 @@ if __name__ == '__main__':
     TS, tspan = read_stackoverflow(1.0/30.0/24.0/3600.0, 1.0, 1.0)
     nseqs = len(TS)
 
-    TSTR, TSVA, TSTE = TS[:int(nseqs*0.85)], TS[int(nseqs*0.85):int(nseqs*0.9)], TS[int(nseqs*0.9):]
+    TSTR, TSVA, TSTE = TS[:int(nseqs*0.85)], TS[int(nseqs*0.85):int(nseqs*0.90)], TS[int(nseqs*0.90):]
 
     # initialize / load model
     func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=32, num_hidden=2, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
@@ -122,27 +122,29 @@ if __name__ == '__main__':
 
             # validate and visualize
             if it % args.nsave == 0:
-                # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align)
+                for si in range(0, len(TSVA), args.batch_size):
+                    # use the full validation set for forward pass
+                    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA[si:si+args.batch_size], args.evnt_align)
 
-                # backward prop
-                func.backtrace.clear()
-                loss.backward()
-                print("iter: {}, validation loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSVA), mete), flush=True)
+                    # backward prop
+                    func.backtrace.clear()
+                    loss.backward()
+                    print("iter: {:5d}, validation loss: {:10.4f}, num_evnts: {:8d}, type error: {}".format(it, loss.item()/len(TSVA[si:si+args.batch_size]), len(tsne), mete), flush=True)
 
-                # visualize
-                tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
-                trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, None, None, tsne, range(len(TSVA)), it)
+                    # visualize
+                    tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
+                    trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
+                    visualize(outpath, tsave, trace, lmbda, tsave_, trace_, None, None, tsne, range(si, si+args.batch_size), it)
 
                 # save
                 torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
 
 
     # computing testing error
-    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align)
-    visualize(outpath, tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSTE)), it, "testing")
-    print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)
+    for si in range(0, len(TSTE), args.batch_size):
+        tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE[si:si+args.batch_size], args.evnt_align)
+        visualize(outpath, tsave, trace, lmbda, None, None, None, None, tsne, range(si, si+args.batch_size), it, "testing")
+        print("iter: {:5d}, testing loss: {:10.4f}, num_evnts: {:8d}, type error: {}".format(it, loss.item()/len(TSTE[si:si+args.batch_size]), len(tsne), mete), flush=True)
 
     # simulate events
     func.jump_type="simulate"
