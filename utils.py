@@ -1,9 +1,31 @@
 import os
 import sys
 import numpy as np
+import math
 import matplotlib.pyplot as plt
 import torch
 from torchdiffeq import odeint_adjoint as odeint
+from numbers import Number
+
+# taken fron ricky chen
+def logsumexp(value, dim=None, keepdim=False):
+    """Numerically stable implementation of the operation
+
+    value.exp().sum(dim, keepdim).log()
+    """
+    if dim is not None:
+        m, _ = torch.max(value, dim=dim, keepdim=True)
+        value0 = value - m
+        if keepdim is False:
+            m = m.squeeze(dim)
+        return m + torch.log(torch.sum(torch.exp(value0), dim=dim, keepdim=keepdim))
+    else:
+        m = torch.max(value)
+        sum_exp = torch.sum(torch.exp(value - m))
+        if isinstance(sum_exp, Number):
+            return m + math.log(sum_exp)
+        else:
+            return m + torch.log(sum_exp)
 
 # create the outdir
 def create_outpath(dataset):
@@ -136,9 +158,8 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0]):
 
         et_error = []
         for evnt in tsne:
-            gsdensity = torch.exp(log_normal_pdf(evnt[:-1], evnt[-1]).sum(dim=-1)) + 1.0e-32  # add 1.0e-32, make sure the result is not zero
-            tmp = torch.log((lmbda[evnt[:-1]] * gsdensity).sum(dim=-1))
-            log_likelihood += tmp
+            log_gs = log_normal_pdf(evnt[:-1], evnt[-1]).sum(dim=-1)
+            log_likelihood += logsumexp(lmbda[evnt[:-1]].log() + log_gs, dim=-1)
             # mean_pred embedding
             mean_preds = torch.zeros(len(type_forecast), func.dim_E)
             for tid, t in enumerate(type_forecast):
