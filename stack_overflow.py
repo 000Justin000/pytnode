@@ -21,6 +21,7 @@ parser.add_argument('--paramr', type=str, default='params.pth')
 parser.add_argument('--paramw', type=str, default='params.pth')
 parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--nsave', type=int, default=10)
+parser.add_argument('--fold', type=int, default=0)
 parser.set_defaults(restart=False, evnt_align=False, seed0=False, debug=False)
 parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
@@ -74,7 +75,10 @@ if __name__ == '__main__':
     TS, tspan = read_stackoverflow(1.0/30.0/24.0/3600.0, 1.0, 1.0)
     nseqs = len(TS)
 
-    TSTR, TSVA, TSTE = TS[:int(nseqs*0.85)], TS[int(nseqs*0.85):int(nseqs*0.90)], TS[int(nseqs*0.90):]
+    # TSTR, TSVA, TSTE = TS[:int(nseqs*0.85)], TS[int(nseqs*0.85):int(nseqs*0.90)], TS[int(nseqs*0.90):]
+    TSTR = TS[:int(nseqs*0.2*fold)] + TS[int(nseqs*0.2*(fold+1)):]
+    TSVA = None
+    TSTE = TS[int(nseqs*0.2*fold):int(nseqs*0.2*(fold+1))]
 
     # initialize / load model
     func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=32, num_hidden=2, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
