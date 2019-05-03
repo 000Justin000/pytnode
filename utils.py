@@ -43,7 +43,7 @@ def create_outpath(dataset):
     return outpath
 
 
-def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tsne, batch_id, itr, appendix=""):
+def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tse, batch_id, itr, appendix=""):
     for sid in range(lmbda.shape[1]):
         fig = plt.figure(figsize=(6, 6), facecolor='white')
         axe = plt.gca()
@@ -67,11 +67,11 @@ def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, ts
             plt.plot(grid.numpy(), lmbda_real[sid], linewidth=1.0, color="gray")
         plt.plot(tsave.numpy(), lmbda[:, sid, :].detach().numpy(), linewidth=0.7)
 
-        if tsne is not None:
-            tsne_current = [evnt for evnt in tsne if evnt[1] == sid]
+        if tse is not None:
+            tse_current = [evnt for evnt in tse if evnt[1] == sid]
             # continue...
-            tevnt = np.array([tsave[evnt[0]] for evnt in tsne_current])
-            kevnt = np.array([evnt[2] if not (type(evnt[2]) == list) else evnt[2][0] for evnt in tsne_current])
+            tevnt = np.array([tsave[evnt[0]] for evnt in tse_current])
+            kevnt = np.array([evnt[2] if not (type(evnt[2]) == list) else evnt[2][0] for evnt in tse_current])
             plt.scatter(tevnt, kevnt * 7.0, 0.5)
 
         plt.savefig(outpath + '/{:03d}_{:04d}'.format(batch_id[sid], itr) + appendix, dpi=250)
@@ -91,7 +91,7 @@ def create_tsave(tmin, tmax, dt, evnts_raw, evnt_align=False):
     :return tsave: the time to save state in ODE simulation
     :return gtid: grid time id
     :return evnts: tuple (rounded_time, ...)
-    :return tsne: tuple (event_time_id, ...)
+    :return tse: tuple (event_time_id, ...)
     """
 
     if evnt_align:
@@ -109,24 +109,24 @@ def create_tsave(tmin, tmax, dt, evnts_raw, evnt_align=False):
     # g(rid)tid
     # t(ime)s(equence)n(ode)e(vent)
     gtid = [t2tid[t] for t in tgrid]
-    tsne = [(t2tid[evnt[0]],) + evnt[1:] for evnt in evnts]
+    tse = [(t2tid[evnt[0]],) + evnt[1:] for evnt in evnts]
 
-    return torch.tensor(tsave), gtid, evnts, tsne
+    return torch.tensor(tsave), gtid, evnts, tse
 
 
-def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0], predict_begin=-np.inf):
+def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0], predict_first=True, rtol=1.0e-5, atol=1.0e-7):
     # merge the sequences to create a sequence
     evnts_raw = sorted([(evnt[0],) + (sid,) + evnt[1:] for sid in range(len(batch)) for evnt in batch[sid]])
 
     # set up grid
-    tsave, gtid, evnts, tsne = create_tsave(tspan[0], tspan[1], dt, evnts_raw, evnt_align)
+    tsave, gtid, evnts, tse = create_tsave(tspan[0], tspan[1], dt, evnts_raw, evnt_align)
     func.evnts = evnts
 
     # convert to numpy array
     tsavenp = tsave.numpy()
 
     # forward pass
-    trace = odeint(func, z0.repeat(len(batch), 1), tsave, method='jump_adams', rtol=1.0e-5, atol=1.0e-7)
+    trace = odeint(func, z0.repeat(len(batch), 1), tsave, method='jump_adams', rtol=rtol, atol=atol)
     params = func.L(trace)
     lmbda = params[..., :func.dim_N]
 
@@ -137,16 +137,19 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0], pr
 
     log_likelihood = -integrate(tsave, lmbda)
 
+    seqs_happened = set(sid for sid in range(len(batch))) if predict_first else set()  # set of sequences where at least one event has happened
+
     if func.evnt_embedding == "discrete":
         et_error = []
-        for evnt in tsne:
+        for evnt in tse:
             log_likelihood += torch.log(lmbda[evnt])
-            if tsave[evnt[0]] > predict_begin:
+            if evnt[1] in seqs_happened:
                 type_preds = torch.zeros(len(type_forecast))
                 for tid, t in enumerate(type_forecast):
                     loc = (np.searchsorted(tsavenp, tsave[evnt[0]].item()-t),) + evnt[1:-1]
                     type_preds[tid] = lmbda[loc].argmax().item()
                 et_error.append((type_preds != evnt[-1]).float())
+            seqs_happened.add(evnt[1])
 
     elif func.evnt_embedding == "continuous":
         gsmean = params[..., func.dim_N*(1+func.dim_E*0):func.dim_N*(1+func.dim_E*1)].view(params.shape[:-1]+(func.dim_N, func.dim_E))
@@ -158,20 +161,21 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0], pr
             return -0.5*(const + logvar[loc] + (gsmean[loc] - func.evnt_embed(k))**2.0 / var[loc])
 
         et_error = []
-        for evnt in tsne:
+        for evnt in tse:
             log_gs = log_normal_pdf(evnt[:-1], evnt[-1]).sum(dim=-1)
             log_likelihood += logsumexp(lmbda[evnt[:-1]].log() + log_gs, dim=-1)
-            if tsave[evnt[0]] > predict_begin:
+            if evnt[1] in seqs_happened:
                 # mean_pred embedding
                 mean_preds = torch.zeros(len(type_forecast), func.dim_E)
                 for tid, t in enumerate(type_forecast):
                     loc = (np.searchsorted(tsavenp, tsave[evnt[0]].item()-t),) + evnt[1:-1]
                     mean_preds[tid] = ((lmbda[loc].view(func.dim_N, 1) * gsmean[loc]).sum(dim=0) / lmbda[loc].sum()).item()
                 et_error.append((mean_preds - func.evnt_embed(evnt[-1])).norm(dim=-1)**2.0)
+            seqs_happened.add(evnt[1])
 
-    METE = sum(et_error)/len(et_error)
+    METE = sum(et_error)/len(et_error) if len(et_error) > 0 else -torch.ones(len(type_forecast))
 
-    return tsave, trace, lmbda, gtid, tsne, -log_likelihood, METE
+    return tsave, trace, lmbda, gtid, tse, -log_likelihood, METE
 
 
 def poisson_lmbda(tmin, tmax, dt, lmbda0, TS):
