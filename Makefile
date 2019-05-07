@@ -27,8 +27,8 @@ run_stack_overflow:
 	taskset --cpu-list 4 python stack_overflow.py --niters 2500 --fold 4 --jump_type read --batch_size 30 --nsave 500 --seed0 &
 
 run_mimic2:
-	taskset --cpu-list 3 python mimic2.py --niters 10000 --fold 0 --jump_type read --batch_size 30 --nsave 500 --seed0 &
-	taskset --cpu-list 4 python mimic2.py --niters 10000 --fold 1 --jump_type read --batch_size 30 --nsave 500 --seed0 &
-	taskset --cpu-list 5 python mimic2.py --niters 10000 --fold 2 --jump_type read --batch_size 30 --nsave 500 --seed0 &
-	taskset --cpu-list 6 python mimic2.py --niters 10000 --fold 3 --jump_type read --batch_size 30 --nsave 500 --seed0 &
-	taskset --cpu-list 7 python mimic2.py --niters 10000 --fold 4 --jump_type read --batch_size 30 --nsave 500 --seed0 &
+	taskset --cpu-list 0 python mimic2.py --niters 10000 --fold 0 --jump_type read --batch_size 30 --nsave 500 --seed0 &
+	taskset --cpu-list 1 python mimic2.py --niters 10000 --fold 1 --jump_type read --batch_size 30 --nsave 500 --seed0 &
+	taskset --cpu-list 2 python mimic2.py --niters 10000 --fold 2 --jump_type read --batch_size 30 --nsave 500 --seed0 &
+	taskset --cpu-list 3 python mimic2.py --niters 10000 --fold 3 --jump_type read --batch_size 30 --nsave 500 --seed0 &
+	taskset --cpu-list 4 python mimic2.py --niters 10000 --fold 4 --jump_type read --batch_size 30 --nsave 500 --seed0 &
