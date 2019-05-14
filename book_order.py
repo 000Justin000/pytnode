@@ -21,6 +21,7 @@ parser.add_argument('--paramr', type=str, default='params.pth')
 parser.add_argument('--paramw', type=str, default='params.pth')
 parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--nsave', type=int, default=10)
+parser.add_argument('--fold', type=int, default=0)
 parser.set_defaults(restart=False, evnt_align=False, seed0=False, debug=False)
 parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
@@ -47,6 +48,7 @@ def read_bookorder(nseqs, scale=1.0):
 
     evnt_seqs = list(map(lambda ep: [((t-time[0])-(time[-1]-time[0])/nseqs*ep[0], int(e-1)) for t, e in zip(*ep[1])], enumerate(zip(tseqs, eseqs))))
 
+
     return evnt_seqs, (0.0, (time[-1]-time[0])/nseqs)
 
 
@@ -60,13 +62,15 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, nseqs, dt = 5, 5, 2, 500, 0.05
-    TS, tspan = read_bookorder(nseqs, 100.0)
+    dim_c, dim_h, dim_N, nseqs, dt = 8, 8, 2, 500, 0.005
+    TS, tspan = read_bookorder(nseqs, 1.0)
 
-    TSTR, TSVA, TSTE = TS[:int(nseqs*0.6)], TS[int(nseqs*0.6):int(nseqs*0.8)], TS[int(nseqs*0.8):]
+    TSTR = TS[:int(nseqs*0.2*args.fold)] + TS[int(nseqs*0.2*(args.fold+1)):]
+    TSTE = TS[int(nseqs*0.2*args.fold):int(nseqs*0.2*(args.fold+1))]
+    TSVA = TSTE
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=20, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=16, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
@@ -96,7 +100,7 @@ if __name__ == '__main__':
             batch = [TSTR[seqid] for seqid in batch_id]
 
             # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align)
+            tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align, predict_first=False, rtol=1.0e-6, atol=1.0e-8)
             loss_meter.update(loss.item() / len(batch))
 
             # backward prop
@@ -112,7 +116,7 @@ if __name__ == '__main__':
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align)
+                tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align, predict_first=False, rtol=1.0e-6, atol=1.0e-8)
 
                 # backward prop
                 func.backtrace.clear()
@@ -129,11 +133,11 @@ if __name__ == '__main__':
 
 
     # computing testing error
-    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align)
+    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align, predict_first=False, rtol=1.0e-6, atol=1.0e-8)
     visualize(outpath, tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSTE)), it, "testing")
     print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)
 
     # simulate events
     func.jump_type="simulate"
-    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align)
+    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align, predict_first=False, rtol=1.0e-6, atol=1.0e-8)
     visualize(outpath, tsave, trace, lmbda, None, None, None, None, tsne, range(10), it, "simulate")
