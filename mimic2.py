@@ -81,7 +81,7 @@ if __name__ == '__main__':
     TSVA = TSTE
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=32, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=32, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.Tanh())
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
