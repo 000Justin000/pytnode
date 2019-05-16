@@ -68,6 +68,27 @@ def read_twitter(scale=1.0):
     return evnt_seqs, (0.0, tmax-tmin)
 
 
+def running_ave(TSTR, TSTE, type_forecast):
+    stmt = []
+    for ts in TSTR:
+        stmt.extend([evnt[1][0] for evnt in ts])
+    stmt0 = sum(stmt)/len(stmt)
+
+    et_error = []
+    for ts in TSTE:
+        time = [-np.inf] + [evnt[0] for evnt in ts]
+        stmt = [stmt0] + [evnt[1][0] for evnt in ts]
+        runave = np.cumsum(stmt) / np.arange(1, len(stmt)+1)
+        for evnt in ts:
+            type_preds = np.zeros(len(type_forecast))
+            for tid, t in enumerate(type_forecast):
+                loc = np.searchsorted(time, evnt[0]-t)-1
+                assert loc >= 0
+                type_preds[tid] = runave[loc]
+            et_error.append((type_preds - evnt[1][0])**2.0)
+    print(sum(et_error)/len(et_error))
+
+
 if __name__ == '__main__':
     # write all parameters to output file
     print(args, flush=True)
@@ -83,6 +104,17 @@ if __name__ == '__main__':
     nseqs = len(TS)
 
     TSTR, TSVA, TSTE = TS[:int(nseqs*0.8)], TS[int(nseqs*0.8):int(nseqs*0.9)], TS[int(nseqs*0.9):]
+    TSTR = [[(i*0.05+0, [-0.9]) for i in range(20)] +
+            [(i*0.05+1, [+0.9]) for i in range(20)] +
+            [(i*0.05+2, [-0.9]) for i in range(20)] +
+            [(i*0.05+3, [+0.9]) for i in range(20)] +
+            [(i*0.05+4, [-0.9]) for i in range(20)] +
+            [(i*0.05+5, [+0.9]) for i in range(20)]]
+    TSVA = TSTR
+    TSTE = TSTR
+    tspan = (0.0, 6.0)
+
+    running_ave(TSTR, TSTE, [1.0/24.0 * i for i in range(0, 11, 2)])
 
     # initialize / load model
     func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=20, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
@@ -115,7 +147,7 @@ if __name__ == '__main__':
             batch = [TSTR[seqid] for seqid in batch_id]
 
             # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
+            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
             loss_meter.update(loss.item() / len(batch))
 
             # backward prop
@@ -131,7 +163,7 @@ if __name__ == '__main__':
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
+                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
 
                 # backward prop
                 func.backtrace.clear()
@@ -141,18 +173,18 @@ if __name__ == '__main__':
                 # visualize
                 tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
                 trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, None, None, tsne, range(len(TSVA)), it)
+                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, tsave, [gsmean[:, i, :, 0].detach().numpy() * 10.0 for i in range(len(TSVA))], tsne, range(len(TSVA)), it)
 
                 # save
                 torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
 
 
     # computing testing error
-    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
-    visualize(outpath, tsave, trace, lmbda, None, None, None, None, tsne, range(len(TSTE)), it, "testing")
+    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
+    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() * 10.0 for i in range(len(TSTE))], tsne, range(len(TSTE)), it, "testing")
     print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)
 
     # simulate events
     func.jump_type="simulate"
-    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
-    visualize(outpath, tsave, trace, lmbda, None, None, None, None, tsne, range(10), it, "simulate")
+    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
+    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() * 10.0 for i in range(10)], tsne, range(10), it, "simulate")

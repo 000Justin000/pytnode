@@ -72,7 +72,7 @@ def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, ts
             # continue...
             tevnt = np.array([tsave[evnt[0]] for evnt in tse_current])
             kevnt = np.array([evnt[2] if not (type(evnt[2]) == list) else evnt[2][0] for evnt in tse_current])
-            plt.scatter(tevnt, kevnt * 7.0, 0.5)
+            plt.scatter(tevnt, kevnt * 10.0, 1.5)
 
         plt.savefig(outpath + '/{:03d}_{:04d}'.format(batch_id[sid], itr) + appendix, dpi=250)
         fig.clf()
@@ -175,7 +175,11 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0], pr
 
     METE = sum(et_error)/len(et_error) if len(et_error) > 0 else -torch.ones(len(type_forecast))
 
-    return tsave, trace, lmbda, gtid, tse, -log_likelihood, METE
+    if func.evnt_embedding == "discrete":
+        return tsave, trace, lmbda, gtid, tse, -log_likelihood, METE
+    elif func.evnt_embedding == "continuous":
+        return tsave, trace, lmbda, gtid, tse, -log_likelihood, METE, gsmean
+
 
 
 def poisson_lmbda(tmin, tmax, dt, lmbda0, TS):
