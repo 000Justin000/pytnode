@@ -104,20 +104,11 @@ if __name__ == '__main__':
     nseqs = len(TS)
 
     TSTR, TSVA, TSTE = TS[:int(nseqs*0.8)], TS[int(nseqs*0.8):int(nseqs*0.9)], TS[int(nseqs*0.9):]
-    TSTR = [[(i*0.05+0, [-0.9]) for i in range(20)] +
-            [(i*0.05+1, [+0.9]) for i in range(20)] +
-            [(i*0.05+2, [-0.9]) for i in range(20)] +
-            [(i*0.05+3, [+0.9]) for i in range(20)] +
-            [(i*0.05+4, [-0.9]) for i in range(20)] +
-            [(i*0.05+5, [+0.9]) for i in range(20)]]
-    TSVA = TSTR
-    TSTE = TSTR
-    tspan = (0.0, 6.0)
 
     running_ave(TSTR, TSTE, [1.0/24.0 * i for i in range(0, 11, 2)])
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=20, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=20, num_hidden=2, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.Tanh(), ortho=True, evnt_embedding="continuous")
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
