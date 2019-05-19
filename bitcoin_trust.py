@@ -54,7 +54,7 @@ def read_bitcoin_trust(scale=1.0):
     tmin = time.min()
     tmax = time.max()
 
-    edges = np.searchsorted(dat[:, 0], np.append(0, uid)+0.5)[1:-1]
+    edges = np.searchsorted(dat[:, 1], np.append(0, uid)+0.5)[1:-1]
     tseqs = np.split(time, edges)
     kseqs = np.split(event, edges)
 
@@ -82,7 +82,7 @@ def running_ave(TSTR, TSTE, type_forecast):
                 assert loc >= 0
                 type_preds[tid] = runave[loc]
             et_error.append((type_preds - evnt[1][0])**2.0)
-    print(sum(et_error)/len(et_error))
+    print(np.sqrt(sum(et_error)/len(et_error)))
 
 
 if __name__ == '__main__':

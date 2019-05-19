@@ -173,7 +173,7 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0], pr
                 et_error.append((mean_preds - func.evnt_embed(evnt[-1])).norm(dim=-1)**2.0)
             seqs_happened.add(evnt[1])
 
-    METE = sum(et_error)/len(et_error) if len(et_error) > 0 else -torch.ones(len(type_forecast))
+    METE = np.sqrt(sum(et_error)/len(et_error)) if len(et_error) > 0 else -torch.ones(len(type_forecast))
 
     if func.evnt_embedding == "discrete":
         return tsave, trace, lmbda, gtid, tse, -log_likelihood, METE
