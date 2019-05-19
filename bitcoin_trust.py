@@ -134,7 +134,7 @@ if __name__ == '__main__':
             batch = [TSTR[seqid] for seqid in batch_id]
 
             # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)])
+            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)], rtol=1.0e-7, atol=1.0e-9)
             loss_meter.update(loss.item() / len(batch))
 
             # backward prop
@@ -150,7 +150,7 @@ if __name__ == '__main__':
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)])
+                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)], rtol=1.0e-7, atol=1.0e-9)
 
                 # backward prop
                 func.backtrace.clear()
@@ -160,18 +160,18 @@ if __name__ == '__main__':
                 # visualize
                 tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
                 trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, tsave, [gsmean[:, i, :, 0].detach().numpy() * 10.0 for i in range(len(TSVA))], tsne, range(len(TSVA)), it)
+                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, tsave, [gsmean[:, i, :, 0].detach().numpy() for i in range(len(TSVA))], tsne, range(len(TSVA)), it)
 
                 # save
                 torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
 
 
     # computing testing error
-    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)])
-    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() * 10.0 for i in range(len(TSTE))], tsne, range(len(TSTE)), it, "testing")
+    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)], rtol=1.0e-7, atol=1.0e-9)
+    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() for i in range(len(TSTE))], tsne, range(len(TSTE)), it, "testing")
     print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)
 
     # simulate events
     func.jump_type="simulate"
-    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)])
-    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() * 10.0 for i in range(10)], tsne, range(10), it, "simulate")
+    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)], rtol=1.0e-7, atol=1.0e-9)
+    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() for i in range(10)], tsne, range(10), it, "simulate")

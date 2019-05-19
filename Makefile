@@ -11,10 +11,10 @@ run_point_process:
 	taskset --cpu-list 3 python point_processes.py --dataset powerlaw_hawkes    --niters 5000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
 
 run_twitter:
-	taskset --cpu-list 4 python tweet.py --dataset politics  --niters 1000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
-	taskset --cpu-list 5 python tweet.py --dataset movie     --niters 1000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
-	taskset --cpu-list 6 python tweet.py --dataset fight     --niters 1000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
-	taskset --cpu-list 7 python tweet.py --dataset bollywood --niters 1000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
+	taskset --cpu-list 0 python tweet.py --dataset politics  --niters 1000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
+	taskset --cpu-list 1 python tweet.py --dataset movie     --niters 1000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
+	taskset --cpu-list 2 python tweet.py --dataset fight     --niters 1000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
+	taskset --cpu-list 3 python tweet.py --dataset bollywood --niters 1000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
 
 run_book_order:
 	taskset --cpu-list 0 python book_order.py --niters 2500 --fold 0 --jump_type read --batch_size 10 --nsave 100 --seed0 &
@@ -36,3 +36,7 @@ run_mimic2:
 	taskset --cpu-list 2 python mimic2.py --niters 10000 --fold 2 --jump_type read --batch_size 30 --nsave 500 --seed0 &
 	taskset --cpu-list 3 python mimic2.py --niters 10000 --fold 3 --jump_type read --batch_size 30 --nsave 500 --seed0 &
 	taskset --cpu-list 4 python mimic2.py --niters 10000 --fold 4 --jump_type read --batch_size 30 --nsave 500 --seed0 &
+
+run_bitcoin_trust:
+	taskset --cpu-list 0 python bitcoin_trust.py --dataset alpha  --niters 100 --jump_type read --batch_size 8 --nsave 10 --seed0 &
+	taskset --cpu-list 1 python bitcoin_trust.py --dataset otc    --niters 100 --jump_type read --batch_size 8 --nsave 10 --seed0 &
