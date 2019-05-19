@@ -14,14 +14,14 @@ from utils import forward_pass, visualize, create_outpath
 
 signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
 
-parser = argparse.ArgumentParser('tweet')
+parser = argparse.ArgumentParser('bitcoin_trust')
 parser.add_argument('--niters', type=int, default=100)
 parser.add_argument('--jump_type', type=str, default='none')
 parser.add_argument('--paramr', type=str, default='params.pth')
 parser.add_argument('--paramw', type=str, default='params.pth')
 parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--nsave', type=int, default=10)
-parser.add_argument('--dataset', type=str, default='politics')
+parser.add_argument('--dataset', type=str, default='alpha')
 parser.set_defaults(restart=False, evnt_align=False, seed0=False, debug=False)
 parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
@@ -37,22 +37,18 @@ if not args.debug:
     sys.stderr = open(outpath + '/' + commit + '.err', 'w')
 
 
-def read_twitter(scale=1.0):
-    if args.dataset == 'politics':
-        dat = np.loadtxt('./data/tweet/Sentiment_PoliticsTwitter.txt')
-    elif args.dataset == 'movie':
-        dat = np.loadtxt('./data/tweet/Sentiment_MovieTwitter.txt')
-    elif args.dataset == 'fight':
-        dat = np.loadtxt('./data/tweet/Sentiment_FightTwitter.txt')
-    elif args.dataset == 'bollywood':
-        dat = np.loadtxt('./data/tweet/Sentiment_BollywoodTwitter.txt')
+def read_bitcoin_trust(scale=1.0):
+    if args.dataset == 'alpha':
+        dat = np.loadtxt('./data/bitcoin_trust/soc-sign-bitcoinalpha.csv', delimiter=",")
+    elif args.dataset == 'otc':
+        dat = np.loadtxt('./data/bitcoin_trust/soc-sign-bitcoinotc.csv', delimiter=",")
 
-    od = np.argsort(np.array([tuple(el[:2]) for el in dat], dtype=[('x', 'i'), ('y', 'f')]))
+    od = np.argsort(np.array([tuple(el[[1, 3]]) for el in dat], dtype=[('x', 'i'), ('y', 'f')]))
     dat = dat[od, :]
 
-    uid = np.unique(dat[:, 0])
+    uid = np.unique(dat[:, 1])
 
-    time = dat[:, 1] * scale
+    time = dat[:, 3] * scale
     event = dat[:, 2]
 
     tmin = time.min()
@@ -99,13 +95,13 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dim_E, dt = 5, 5, 1, 1, 1.0/24.0
-    TS, tspan = read_twitter(1.0/24.0/3600.0)
+    dim_c, dim_h, dim_N, dim_E, dt = 5, 5, 1, 1, 1.0/12.0/30.0
+    TS, tspan = read_bitcoin_trust(1.0/12.0/30.0/24.0/3600.0)
     nseqs = len(TS)
 
     TSTR, TSVA, TSTE = TS[:int(nseqs*0.8)], TS[int(nseqs*0.8):int(nseqs*0.9)], TS[int(nseqs*0.9):]
 
-    running_ave(TSTR, TSTE, [1.0/24.0 * i for i in range(0, 11, 2)])
+    running_ave(TSTR, TSTE, [1.0/12.0 * i for i in range(0, 7)])
 
     # initialize / load model
     func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=20, num_hidden=2, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.Tanh(), ortho=True, evnt_embedding="continuous")
@@ -138,7 +134,7 @@ if __name__ == '__main__':
             batch = [TSTR[seqid] for seqid in batch_id]
 
             # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
+            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)])
             loss_meter.update(loss.item() / len(batch))
 
             # backward prop
@@ -154,7 +150,7 @@ if __name__ == '__main__':
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
+                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)])
 
                 # backward prop
                 func.backtrace.clear()
@@ -171,11 +167,11 @@ if __name__ == '__main__':
 
 
     # computing testing error
-    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
+    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)])
     visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() * 10.0 for i in range(len(TSTE))], tsne, range(len(TSTE)), it, "testing")
     print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)
 
     # simulate events
     func.jump_type="simulate"
-    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align, [1.0/24.0 * i for i in range(0, 11, 2)])
+    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)])
     visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() * 10.0 for i in range(10)], tsne, range(10), it, "simulate")

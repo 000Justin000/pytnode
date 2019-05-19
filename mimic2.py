@@ -14,7 +14,7 @@ from utils import forward_pass, visualize, create_outpath
 
 signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
 
-parser = argparse.ArgumentParser('point_processes')
+parser = argparse.ArgumentParser('mimic2')
 parser.add_argument('--niters', type=int, default=100)
 parser.add_argument('--jump_type', type=str, default='none')
 parser.add_argument('--paramr', type=str, default='params.pth')
