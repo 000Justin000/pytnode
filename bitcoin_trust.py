@@ -99,7 +99,7 @@ if __name__ == '__main__':
     TS, tspan = read_bitcoin_trust(1.0/12.0/30.0/24.0/3600.0)
     nseqs = len(TS)
 
-    TSTR, TSVA, TSTE = TS[:int(nseqs*0.8)], TS[int(nseqs*0.8):int(nseqs*0.9)], TS[int(nseqs*0.9):]
+    TSTR, TSVA, TSTE = TS[:int(nseqs*0.8)], TS[int(nseqs*0.8):], TS[int(nseqs*0.8):]
 
     running_ave(TSTR, TSTE, [1.0/12.0 * i for i in range(0, 7)])
 
