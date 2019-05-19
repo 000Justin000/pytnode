@@ -71,7 +71,7 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dt = 16, 16, 75, 0.05
+    dim_c, dim_h, dim_N, dt = 32, 32, 75, 0.05
     TS, tspan = read_mimic2(1.0, 1.0, 1.0)
     nseqs = len(TS)
 
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     TSVA = TSTE
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=32, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=64, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
