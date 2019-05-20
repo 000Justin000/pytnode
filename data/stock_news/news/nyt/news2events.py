@@ -1,5 +1,6 @@
 import json
 import dateutil.parser
+import numpy as np
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 def getstr(dic, key):
@@ -23,25 +24,34 @@ def contains(article, keywords):
     return contain
 
 
-
 if __name__ == "__main__":
 
     sid = SentimentIntensityAnalyzer()
     articles = []
-    headlines = []
     events = []
+    headlines = set()
 
     nonkeywords = ["Applebee"]
     keywords = ["Apple", "Steve Jobs", "Steve P. Jobs", "Tim Cook", "Tim D. Cook", "iPod", "iPad", "iPhone", "iMac", "Macintosh", "MacBook"]
     
-    with open("nyt20071") as json_file: 
-        data = json.load(json_file) 
+    #------------------------------------------
+    for y in range(2006,2019):
+        #--------------------------------------
+        for m in range(1,13):
+            #----------------------------------
+            filename = "nyt" + str(y) + str(m)
+            #----------------------------------
+            with open(filename) as json_file: 
+                data = json.load(json_file) 
+            #----------------------------------
+            for article in data["response"]["docs"]:
+                headline = getstr(article["headline"], "main")
+                if (headline not in headlines) and contains(removes(headline, nonkeywords), keywords):
+                    articles.append(article)
+                    ss = sid.polarity_scores(headline)
+                    tt = dateutil.parser.isoparse(article["pub_date"]).timestamp()
+                    events.append(("{:10d}".format(int(tt)), "{:+10.4f}".format(ss["compound"]), headline))
+                    headlines.add(headline)
+    #------------------------------------------
 
-    for article in data["response"]["docs"]:
-        headline = getstr(article["headline"], "main")
-        if contains(removes(headline, nonkeywords), keywords):
-            articles.append(article)
-            headlines.append(headline)
-            ss = sid.polarity_scores(headline)
-            tt = dateutil.parser.isoparse(article["pub_date"]).timestamp()
-            events.append((tt, ss["compound"]))
+    np.savetxt("events", sorted(events), fmt=["%s", "%s", "%s"], delimiter='\t')

@@ -17,4 +17,5 @@ T1 = T/1000 + 112*60*60
 
 stocks_data = [T0, T1] + stocks_data
 
-np.savetxt("stock_price", np.array(stocks_data).T, fmt=['%15d', '%15d'] + ['%10.3f', '%10.3f'] * len(stocks))
+np.savetxt("stock_price", np.array(stocks_data).T, fmt = ['%15d', '%15d'] + ['%14.3f', '%14.3f'] * len(stocks), 
+        header = "{:>13s}{:>16s}".format("open", "close") + "".join(map(lambda s: "{:>15s}".format(s), sum([[stock+"(open)", stock+"(close)"] for stock in stocks], []))))
