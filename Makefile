@@ -40,3 +40,6 @@ run_mimic2:
 run_bitcoin_trust:
 	taskset --cpu-list 0 python bitcoin_trust.py --dataset alpha  --niters 3000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
 	taskset --cpu-list 1 python bitcoin_trust.py --dataset otc    --niters 3000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
+
+run_stocks_news:
+	taskset --cpu-list 0 python stocks_news.py --niters 300 --jump_type read --batch_size 30 --nsave 30 --seed0 &
