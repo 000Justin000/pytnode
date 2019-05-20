@@ -114,7 +114,7 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dim_E, dt = 5, 5, 1, 1, 1.0/24.0
+    dim_c, dim_h, dim_N, dim_E, dt = 8, 16, 1, 1, 1.0/24.0
     TS, OC, tspan = read_stock_news(1.0/24.0/3600.0)
     nseqs = len(TS)
 
@@ -122,7 +122,7 @@ if __name__ == '__main__':
     OCTR, OCVA, OCTE = OC[:int(nseqs*0.8)], OC[int(nseqs*0.8):int(nseqs*0.9)], OC[int(nseqs*0.9):]
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=20, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.Tanh(), ortho=True, evnt_embedding="continuous")
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=32, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
