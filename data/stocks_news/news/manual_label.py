@@ -5,7 +5,7 @@ from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 if __name__ == "__main__":
 
-    with open("eventnews.json") as f: 
+    with open("events.json") as f: 
         dat = json.load(f)
 
     events = dat[0]
@@ -15,7 +15,7 @@ if __name__ == "__main__":
     # human label
     #------------------------------------------
     i = 0
-    input2sentiment = {'a':0.0, 's':1.0, 'd':-1.0}
+    input2sentiment = {'4': 1.0, '1': 0.5, '3': 0.0, '2': -0.5, '5': -1.0}
     #------------------------------------------
     for i in range(len(events)):
         if not reviewed[i]:
@@ -28,12 +28,12 @@ if __name__ == "__main__":
                     sentiment = input2sentiment[input_value]
                     correct_input = True
                 else:
-                    print("retry --- a: 0.0, s: 1.0, d: -1.0")
+                    print("retry --- 4: 1.0, 1: 0.5, 3: 0.0, 2: -0.5, 5: -1.0")
 
             events[i] = events[i][0:1] + ["{:+10.4f}".format(sentiment)] + events[i][2:]
             reviewed[i] = True
 
             if i % 10 == 0:
-                json.dump([events, reviewed], open("eventnews.json", "w"))
-                np.savetxt("eventmanual", events, fmt=["%s", "%s", "%s"], delimiter='\t')
+                json.dump([events, reviewed], open("events.json", "w"))
+                np.savetxt("events_manual", events, fmt=["%s", "%s", "%s"], delimiter='\t')
     #------------------------------------------
