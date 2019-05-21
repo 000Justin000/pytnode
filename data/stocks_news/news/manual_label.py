@@ -37,3 +37,6 @@ if __name__ == "__main__":
                 json.dump([events, reviewed], open("events.json", "w"))
                 np.savetxt("events_manual", events, fmt=["%s", "%s", "%s"], delimiter='\t')
     #------------------------------------------
+    json.dump([events, reviewed], open("events.json", "w"))
+    np.savetxt("events_manual", events, fmt=["%s", "%s", "%s"], delimiter='\t')
+    #------------------------------------------
