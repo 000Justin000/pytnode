@@ -33,7 +33,7 @@ if __name__ == "__main__":
             events[i] = events[i][0:1] + ["{:+10.4f}".format(sentiment)] + events[i][2:]
             reviewed[i] = True
 
-            if i % 10 == 0:
+            if i % 5 == 0:
                 json.dump([events, reviewed], open("events.json", "w"))
                 np.savetxt("events_manual", events, fmt=["%s", "%s", "%s"], delimiter='\t')
     #------------------------------------------

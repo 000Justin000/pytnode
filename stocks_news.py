@@ -44,12 +44,14 @@ def read_stock_news(scale=1.0):
     time_intervals = stocks[:, [0, 1]]
     adjusted_price = (stocks[:, 3] / stocks[:, 2]) / (stocks[:, -1] / stocks[:, -2])
 
-    events = np.loadtxt('./data/stocks_news/news/events')
+    events = np.loadtxt('./data/stocks_news/news/events_nltk')
 
     edges = np.searchsorted(events[:, 0], [-np.inf] + list(time_intervals.reshape(-1)) + [np.inf])[1:-1]
     eseqs = np.split(events, edges)[1::2]
 
     evnt_seqs = [[((evnt[0]-time_interval[0])*scale, [evnt[1]]) for evnt in eseq] for time_interval, eseq in zip(time_intervals, eseqs)]
+
+    random.shuffle(evnt_seqs)
 
     return evnt_seqs, adjusted_price, (0.0, 102.5*3600 * scale)
 
