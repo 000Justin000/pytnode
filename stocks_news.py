@@ -44,7 +44,7 @@ def read_stock_news(scale=1.0):
     time_intervals = stocks[:, [0, 1]]
     adjusted_price = (stocks[:, 3] / stocks[:, 2]) / (stocks[:, -1] / stocks[:, -2])
 
-    events = np.loadtxt('./data/stocks_news/news/events_nltk')
+    events = np.loadtxt('./data/stocks_news/news/events_manual')
 
     edges = np.searchsorted(events[:, 0], [-np.inf] + list(time_intervals.reshape(-1)) + [np.inf])[1:-1]
     eseqs = np.split(events, edges)[1::2]
