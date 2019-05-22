@@ -9,19 +9,20 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from modules import RunningAverageMeter, ODEJumpFunc
-from utils import forward_pass, visualize, create_outpath
-
+from utils import poisson_lmbda, exponential_hawkes_lmbda, powerlaw_hawkes_lmbda, self_inhibiting_lmbda, forward_pass, visualize, create_outpath
 
 signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
 
-parser = argparse.ArgumentParser('bitcoin_trust')
+parser = argparse.ArgumentParser('point_processes')
 parser.add_argument('--niters', type=int, default=100)
 parser.add_argument('--jump_type', type=str, default='none')
 parser.add_argument('--paramr', type=str, default='params.pth')
 parser.add_argument('--paramw', type=str, default='params.pth')
 parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--nsave', type=int, default=10)
-parser.add_argument('--dataset', type=str, default='alpha')
+parser.add_argument('--dataset', type=str, default='poisson')
+parser.add_argument('--suffix', type=str, default='')
+
 parser.set_defaults(restart=False, evnt_align=False, seed0=False, debug=False)
 parser.add_argument('--restart', dest='restart', action='store_true')
 parser.add_argument('--evnt_align', dest='evnt_align', action='store_true')
@@ -36,53 +37,10 @@ if not args.debug:
     sys.stdout = open(outpath + '/' + commit + '.log', 'w')
     sys.stderr = open(outpath + '/' + commit + '.err', 'w')
 
-
-def read_bitcoin_trust(scale=1.0):
-    if args.dataset == 'alpha':
-        dat = np.loadtxt('./data/bitcoin_trust/soc-sign-bitcoinalpha.csv', delimiter=",")
-    elif args.dataset == 'otc':
-        dat = np.loadtxt('./data/bitcoin_trust/soc-sign-bitcoinotc.csv', delimiter=",")
-
-    od = np.argsort(np.array([tuple(el[[1, 3]]) for el in dat], dtype=[('x', 'i'), ('y', 'f')]))
-    dat = dat[od, :]
-
-    uid = np.unique(dat[:, 1])
-
-    time = dat[:, 3] * scale
-    event = dat[:, 2]
-
-    tmin = time.min()
-    tmax = time.max()
-
-    edges = np.searchsorted(dat[:, 1], np.append(0, uid)+0.5)[1:-1]
-    tseqs = np.split(time, edges)
-    kseqs = np.split(event, edges)
-
-    evnt_seqs = [[(t-tmin, [k]) for t, k in zip(tseq, kseq)] for tseq, kseq in zip(tseqs, kseqs)]
-    random.shuffle(evnt_seqs)
-
-    return evnt_seqs, (0.0, tmax-tmin)
-
-
-def running_ave(TSTR, TSTE, type_forecast):
-    stmt = []
-    for ts in TSTR:
-        stmt.extend([evnt[1][0] for evnt in ts])
-    stmt0 = sum(stmt)/len(stmt)
-
-    et_error = []
-    for ts in TSTE:
-        time = [-np.inf] + [evnt[0] for evnt in ts]
-        stmt = [stmt0] + [evnt[1][0] for evnt in ts]
-        runave = np.cumsum(stmt) / np.arange(1, len(stmt)+1)
-        for evnt in ts:
-            type_preds = np.zeros(len(type_forecast))
-            for tid, t in enumerate(type_forecast):
-                loc = np.searchsorted(time, evnt[0]-t)-1
-                assert loc >= 0
-                type_preds[tid] = runave[loc]
-            et_error.append((type_preds - evnt[1][0])**2.0)
-    print(np.sqrt(sum(et_error)/len(et_error)))
+def read_timeseries(filename, scale=1.0, num_seqs=sys.maxsize):
+    with open(filename) as f:
+        seqs = f.readlines()[:num_seqs]
+    return [[(float(t)*scale, [np.sin(float(t)*scale)]) for t in seq.split(';')[0].split()] for seq in seqs]
 
 
 if __name__ == '__main__':
@@ -95,16 +53,27 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dim_E, dt = 5, 5, 1, 1, 1.0/12.0/30.0
-    TS, tspan = read_bitcoin_trust(1.0/12.0/30.0/24.0/3600.0)
-    nseqs = len(TS)
+    dim_c, dim_h, dim_N, dt, tspan = 3, 2, 1, np.pi/200.0, (0.0, np.pi*5)
+    path = "./data/point_processes/"
+    TSTR = read_timeseries(path + args.dataset + "_training.csv", np.pi/20.0)
+    TSVA = read_timeseries(path + args.dataset + "_validation.csv", np.pi/20.0)
+    TSTE = read_timeseries(path + args.dataset + "_testing.csv", np.pi/20.0)
 
-    TSTR, TSVA, TSTE = TS[:int(nseqs*0.8)], TS[int(nseqs*0.8):], TS[int(nseqs*0.8):]
-
-    running_ave(TSTR, TSTE, [1.0/12.0 * i for i in range(0, 7)])
+    if args.dataset == "poisson":
+        lmbda_va_real = poisson_lmbda(tspan[0], tspan[1], dt, 0.2, TSVA)
+        lmbda_te_real = poisson_lmbda(tspan[0], tspan[1], dt, 0.2, TSTE)
+    elif args.dataset == "exponential_hawkes":
+        lmbda_va_real = exponential_hawkes_lmbda(tspan[0], tspan[1], dt, 0.2, 0.8, 1.0, TSVA, args.evnt_align)
+        lmbda_te_real = exponential_hawkes_lmbda(tspan[0], tspan[1], dt, 0.2, 0.8, 1.0, TSTE, args.evnt_align)
+    elif args.dataset == "powerlaw_hawkes":
+        lmbda_va_real = powerlaw_hawkes_lmbda(tspan[0], tspan[1], dt, 0.2, 0.8, 2.0, 1.0, TSVA, args.evnt_align)
+        lmbda_te_real = powerlaw_hawkes_lmbda(tspan[0], tspan[1], dt, 0.2, 0.8, 2.0, 1.0, TSTE, args.evnt_align)
+    elif args.dataset == "self_inhibiting":
+        lmbda_va_real = self_inhibiting_lmbda(tspan[0], tspan[1], dt, 0.5, 0.2, TSVA, args.evnt_align)
+        lmbda_te_real = self_inhibiting_lmbda(tspan[0], tspan[1], dt, 0.5, 0.2, TSTE, args.evnt_align)
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=20, num_hidden=2, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=20, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), evnt_embedding="continuous")
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
@@ -134,7 +103,7 @@ if __name__ == '__main__':
             batch = [TSTR[seqid] for seqid in batch_id]
 
             # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)], rtol=1.0e-7, atol=1.0e-9)
+            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align)
             loss_meter.update(loss.item() / len(batch))
 
             # backward prop
@@ -150,7 +119,7 @@ if __name__ == '__main__':
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)], rtol=1.0e-7, atol=1.0e-9)
+                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align)
 
                 # backward prop
                 func.backtrace.clear()
@@ -160,18 +129,22 @@ if __name__ == '__main__':
                 # visualize
                 tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
                 trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, tsave, [gsmean[:, i, :, 0].detach().numpy() for i in range(len(TSVA))], tsne, range(len(TSVA)), it)
+                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, tsave[gtid], lmbda_va_real, tsne, range(len(TSVA)), it, gsmean=gsmean)
 
                 # save
                 torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
 
 
     # computing testing error
-    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)], rtol=1.0e-7, atol=1.0e-9)
-    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() for i in range(len(TSTE))], tsne, range(len(TSTE)), it, "testing")
+    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align)
+    visualize(outpath, tsave, trace, lmbda, None, None, tsave[gtid], lmbda_te_real, tsne, range(len(TSTE)), it, appendix="testing", gsmean=gsmean)
     print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)
 
-    # simulate events
-    func.jump_type="simulate"
-    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align, [1.0/12.0 * i for i in range(0, 7)], rtol=1.0e-7, atol=1.0e-9)
-    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() for i in range(10)], tsne, range(10), it, "simulate")
+#   import matplotlib.pyplot as plt
+#   i = 6
+#   plt.figure(figsize=(10, 3), facecolor='white');
+#   plt.plot(tsave.numpy() * 100.0 / (np.pi * 5.0), gsmean[:, i, 0, 0].detach().numpy(), linewidth=1.5, linestyle="dotted", color="black");
+#   events_time = [evnt[0] * 100 / (5 * np.pi) for evnt in TSTE[i]];
+#   events_embedding = [evnt[1][0] for evnt in TSTE[i]];
+#   plt.scatter(events_time, events_embedding, 5.0);
+#   plt.savefig("00.svg");

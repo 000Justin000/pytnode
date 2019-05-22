@@ -40,3 +40,15 @@ run_mimic2:
 run_bitcoin_trust:
 	taskset --cpu-list 0 python bitcoin_trust.py --dataset alpha  --niters 3000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
 	taskset --cpu-list 1 python bitcoin_trust.py --dataset otc    --niters 3000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
+
+run_stocks_news:
+	taskset --cpu-list 1 python stocks_news.py --niters 10000 --jump_type read --batch_size 30 --nsave 50 --seed0 &
+
+run_stocks_news0:
+	taskset --cpu-list 3 python stocks_news0.py --niters 10000 --jump_type read --batch_size 30 --nsave 50 --seed0 &
+
+run_earthquake:
+	taskset --cpu-list 2 python earthquake.py --niter 10000 --paramr workspace/dataset:earthquake-pid:24604/params.pth --jump_type read --batch_size 1 --nsave 50 --seed0 --restart &
+
+run_point_process_gaussian:
+	taskset --cpu-list 1 python point_processes_gaussian.py --datase exponential_hawkes --niter 3000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
