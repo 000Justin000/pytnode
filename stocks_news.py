@@ -96,7 +96,7 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, outcomes, rtol=1.0e-7, 
             log_likelihood += logsumexp(log_gs, dim=-1)
             mean_pred = ((lmbda[-1, i].view(func.dim_N, 1) * gsmean[-1, i]).sum(dim=0) / lmbda[-1, i].sum()).item()
             et_error.append((mean_pred - func.evnt_embed(outcomes[i])).norm(dim=-1)**2.0)
-            loss0 += ((lmbda[0, i].view(func.dim_N, 1) * gsmean[0, i]).sum(dim=0) / lmbda[0, i].sum() - 1.0)**2.0
+            loss0 += ((lmbda[0, i].view(func.dim_N, 1) * gsmean[0, i]).sum(dim=0) / lmbda[0, i].sum() - 1.0)**2.0 * 1000.0
 
         METE = np.sqrt(sum(et_error)/len(et_error))
 
@@ -116,7 +116,7 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dim_E, dt = 8, 16, 1, 1, 1.0/24.0
+    dim_c, dim_h, dim_N, dim_E, dt = 1, 1, 1, 1, 1.0/24.0
     TS, OC, tspan = read_stock_news(1.0/24.0/3600.0)
     nseqs = len(TS)
 
@@ -124,7 +124,7 @@ if __name__ == '__main__':
     OCTR, OCVA, OCTE = OC[:int(nseqs*0.8)], OC[int(nseqs*0.8):int(nseqs*0.9)], OC[int(nseqs*0.9):]
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=32, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=2, num_hidden=0, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
@@ -181,7 +181,7 @@ if __name__ == '__main__':
                 # visualize
                 tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
                 trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, tsave, [gsmean[:, i, :, 0].detach().numpy() * 5.0 for i in range(len(TSVA))], tsne, range(len(TSVA)), it)
+                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, tsave, [gsmean[:, i, :, 0].detach().numpy() * 5.0 for i in range(len(TSVA))], tsne, range(len(TSVA)), it, otc=OCVA)
 
                 # save
                 torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
@@ -189,10 +189,10 @@ if __name__ == '__main__':
 
     # computing testing error
     tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align, OCTE)
-    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() * 5.0 for i in range(len(TSTE))], tsne, range(len(TSTE)), it, "testing")
+    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() * 5.0 for i in range(len(TSTE))], tsne, range(len(TSTE)), it, otc=OCTE, appendix="testing")
     print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)
 
     # simulate events
     func.jump_type="simulate"
     tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align, np.ones(10))
-    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() * 5.0 for i in range(10)], tsne, range(10), it, "simulate")
+    visualize(outpath, tsave, trace, lmbda, None, None, tsave, [gsmean[:, i, :, 0].detach().numpy() * 5.0 for i in range(10)], tsne, range(10), it, otc=np.ones(10), appendix="simulate")

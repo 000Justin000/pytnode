@@ -43,7 +43,7 @@ def create_outpath(dataset):
     return outpath
 
 
-def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tse, batch_id, itr, appendix=""):
+def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, tse, batch_id, itr, gsmean=None, otc=None, appendix=""):
     for sid in range(lmbda.shape[1]):
         fig = plt.figure(figsize=(6, 6), facecolor='white')
         axe = plt.gca()
@@ -72,7 +72,15 @@ def visualize(outpath, tsave, trace, lmbda, tsave_, trace_, grid, lmbda_real, ts
             # continue...
             tevnt = np.array([tsave[evnt[0]] for evnt in tse_current])
             kevnt = np.array([evnt[2] if not (type(evnt[2]) == list) else evnt[2][0] for evnt in tse_current])
-            plt.scatter(tevnt, kevnt * 5.0, 1.5)
+            plt.scatter(tevnt, kevnt, 1.5)
+
+        # plot the gaussian mean
+        if gsmean is not None:
+            for dat in list(gsmean[:, sid, :, 0].detach().numpy().T):
+                plt.plot(tsave.numpy(), dat, linewidth=0.5, linestyle="dotted", color="black")
+
+        if otc is not None:
+            plt.scatter(grid[-1].numpy(), otc[sid]*5.0, 5.0)
 
         plt.savefig(outpath + '/{:03d}_{:04d}'.format(batch_id[sid], itr) + appendix, dpi=250)
         fig.clf()
@@ -171,7 +179,7 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0], pr
                 mean_preds = torch.zeros(len(type_forecast), func.dim_E)
                 for tid, t in enumerate(type_forecast):
                     loc = (np.searchsorted(tsavenp, tsave[evnt[0]].item()-t),) + evnt[1:-1]
-                    mean_preds[tid] = ((lmbda[loc].view(func.dim_N, 1) * gsmean[loc]).sum(dim=0) / lmbda[loc].sum()).item()
+                    mean_preds[tid] = ((lmbda[loc].view(func.dim_N, 1) * gsmean[loc]).sum(dim=0) / lmbda[loc].sum()).detach()
                 et_error.append((mean_preds - func.evnt_embed(evnt[-1])).norm(dim=-1)**2.0)
             seqs_happened.add(evnt[1])
 
@@ -180,7 +188,7 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0], pr
     if func.evnt_embedding == "discrete":
         return tsave, trace, lmbda, gtid, tse, -log_likelihood, METE
     elif func.evnt_embedding == "continuous":
-        return tsave, trace, lmbda, gtid, tse, -log_likelihood, METE, gsmean
+        return tsave, trace, lmbda, gtid, tse, -log_likelihood, METE, gsmean, var
 
 
 
