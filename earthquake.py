@@ -148,7 +148,7 @@ if __name__ == '__main__':
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
-    optimizer = optim.LBFGS([func.parameters(), c0], max_iter=1000)
+    optimizer = optim.LBFGS(list(func.parameters())+[c0], max_iter=20)
 
     if args.restart:
         checkpoint = torch.load(args.paramr)
@@ -158,48 +158,42 @@ if __name__ == '__main__':
         it0 = checkpoint['it0']
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-    loss_meter = RunningAverageMeter()
-
     # if read from history, then fit to maximize likelihood
     it = it0 - (1 if args.restart else 0)
     if func.jump_type == "read":
         while it < args.niters:
-            # clear out gradients for variables
-            optimizer.zero_grad()
+            def closure():
+                # clear out gradients for variables
+                optimizer.zero_grad()
 
-            # sample a mini-batch, create a grid based on that
-            batch_id = np.random.choice(len(TSTR), args.batch_size, replace=False)
-            batch = [TSTR[seqid] for seqid in batch_id]
-
-            # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_tr, dt, batch, args.evnt_align, gs_info=gs_info)
-            loss_meter.update(loss.item() / len(batch))
-
-            # backward prop
-            func.backtrace.clear()
-            loss.backward()
-            print("iter: {}, current loss: {:10.4f}, running ave loss: {:10.4f}, type error: {}".format(it, loss.item()/len(batch), loss_meter.avg, mete), flush=True)
-
-            # step
-            optimizer.step()
-
-            it = it+1
-
-            # validate and visualize
-            if it % args.nsave == 0:
-                # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_va, dt, TSVA, args.evnt_align, gs_info=gs_info)
+                # forward pass
+                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_tr, dt, TSTR, args.evnt_align, gs_info=gs_info)
 
                 # backward prop
                 func.backtrace.clear()
                 loss.backward()
-                print("iter: {}, validation loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSVA), mete), flush=True)
+                print("iter: {}, current loss: {:10.4f}".format(it, loss.item()), flush=True)
 
-                # visualize
-                tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
-                trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-                visualize_(outpath, tsave, gtid[0::4], lmbda, gsmean, gsvar, TSVA[0], it)
-                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, None, None, None, range(len(TSVA)), it)
+                return loss
 
-                # save
-                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + '{:04d}'.format(it) + args.paramw)
+            # step
+            optimizer.step(closure)
+
+            it = it+1
+
+            # validation
+            optimizer.zero_grad()
+            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_va, dt, TSVA, args.evnt_align, gs_info=gs_info)
+
+            func.backtrace.clear()
+            loss.backward()
+            print("iter: {}, validation loss: {:10.4f}, type error: {}".format(it, loss.item(), mete), flush=True)
+
+            # visualize
+            tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
+            trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
+            visualize_(outpath, tsave, gtid[0::4], lmbda, gsmean, gsvar, TSVA[0], it)
+            visualize(outpath, tsave, trace, lmbda, tsave_, trace_, None, None, None, range(len(TSVA)), it)
+
+            # save
+            torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + '{:04d}'.format(it) + args.paramw)
