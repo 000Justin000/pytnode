@@ -148,9 +148,7 @@ if __name__ == '__main__':
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
-    optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': c0},
-                            ], max_iter=1000)
+    optimizer = optim.LBFGS([func.parameters(), c0], max_iter=1000)
 
     if args.restart:
         checkpoint = torch.load(args.paramr)
