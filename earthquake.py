@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 from modules import RunningAverageMeter, ODEJumpFunc
 from utils import forward_pass, visualize, create_outpath
+from sklearn import mixture
 
 
 signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
@@ -42,7 +43,7 @@ def read_earthquake(scale=1.0):
     dat = np.loadtxt('./data/earthquakes/events')
 
     # cut off 2015-01-01
-    tr = [[(evnt[0]*scale, tuple(evnt[-1:0:-1] - center_of_labels)) for evnt in dat if evnt[0] < 1420070400]]
+    tr = [[(evnt[0]*scale, tuple(evnt[-1:0:-1] - center_of_labels)) for evnt in dat if evnt[0] < 1104537600]]
     te = [[(evnt[0]*scale, tuple(evnt[-1:0:-1] - center_of_labels)) for evnt in dat]]
 
     return tr, te, (0, 1104537600*scale), (0, 1554076800*scale)
@@ -75,12 +76,54 @@ def visualize_(outpath, tsave, gtid, lmbda, gsmean, gsvar, events, itr):
         plt.clabel(cs, inline=1, fontsize=10)
 
         if len(events_current) != 0:
-            plt.scatter(events_current[:, 0], events_current[:, 1], 2.0, c="red")
+            plt.scatter(events_current[:, 0], events_current[:, 1], 3.0, c="red")
         plt.scatter(gaussian_center[:, 0], gaussian_center[:, 1], 3.0, c="orange")
 
         plt.savefig(outpath + '/{:04d}_{:04d}.svg'.format(itr, i), dpi=250)
         fig.clf()
         plt.close(fig)
+
+def estimate_density(events, tspan):
+    if args.seed0:
+        random.seed(0)
+        np.random.seed(0)
+        torch.manual_seed(0)
+
+    X = np.array([np.array(evnt[1]) + np.array(center_of_labels) for evnt in events])
+    clf = mixture.GaussianMixture(n_components=5, covariance_type="diag")
+    clf.fit(X)
+
+    gaussian_weight = clf.weights_ * (len(events) / tspan[1])
+    gaussian_center = clf.means_
+    gaussian_var = clf.covariances_
+
+    x, y = np.meshgrid(np.linspace(-124.5, -114.13, 500), np.linspace(32.5, 42.0, 300))
+    density = np.zeros(x.shape)
+    for gs_weight, gs_center, gs_var in zip(gaussian_weight, gaussian_center, gaussian_var):
+        gs_pdf = np.exp(-0.5*((x-gs_center[0])**2.0/gs_var[0] +
+                              (y-gs_center[1])**2.0/gs_var[1])) / ((2*np.pi) * np.sqrt(gs_var[0] * gs_var[1]))
+        density += gs_weight * gs_pdf
+
+    fig = plt.figure(figsize=(6, 6), facecolor='white')
+    axe = plt.gca()
+    axe.set_title('Earthquakes')
+    axe.set_xlabel('longitude')
+    axe.set_ylabel('latitude')
+    axe.set_xlim(-124.5, -114.13)
+    axe.set_ylim(32.5, 42)
+
+    cs = plt.contour(x, y, density, levels=[2**j for j in range(-8, 2)])
+    plt.clabel(cs, inline=1, fontsize=10)
+
+    if len(X) != 0:
+        plt.scatter(X[:, 0], X[:, 1], 3.0, c="red")
+    plt.scatter(gaussian_center[:, 0], gaussian_center[:, 1], 3.0, c="orange")
+
+    plt.savefig(outpath + '/baseline.svg', dpi=250)
+    fig.clf()
+    plt.close(fig)
+
+    return (gaussian_weight, gaussian_center - np.array(center_of_labels), gaussian_var)
 
 
 if __name__ == '__main__':
@@ -96,14 +139,18 @@ if __name__ == '__main__':
     dim_c, dim_h, dim_N, dim_E, dt = 10, 10, 5, 2, 1.0/52.0
     TSTR, TSVA, tspan_tr, tspan_va = read_earthquake(1.0/52.0/7.0/24.0/3600.0)
 
+    # baseline
+    # gs_info = estimate_density(TSTR[0], tspan_tr)
+    gs_info = None
+
     # initialize / load model
     func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=32, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.Tanh(), ortho=True, evnt_embedding="continuous")
     c0 = torch.randn(dim_c, requires_grad=True)
     h0 = torch.zeros(dim_h)
     it0 = 0
     optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': c0, 'lr': 1.0e-2},
-                            ], lr=1e-3, weight_decay=1e-5)
+                            {'params': c0},
+                            ], max_iter=1000)
 
     if args.restart:
         checkpoint = torch.load(args.paramr)
@@ -127,7 +174,7 @@ if __name__ == '__main__':
             batch = [TSTR[seqid] for seqid in batch_id]
 
             # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_tr, dt, batch, args.evnt_align)
+            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_tr, dt, batch, args.evnt_align, gs_info=gs_info)
             loss_meter.update(loss.item() / len(batch))
 
             # backward prop
@@ -143,7 +190,7 @@ if __name__ == '__main__':
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_va, dt, TSVA, args.evnt_align)
+                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_va, dt, TSVA, args.evnt_align, gs_info=gs_info)
 
                 # backward prop
                 func.backtrace.clear()
