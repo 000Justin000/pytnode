@@ -122,7 +122,7 @@ def create_tsave(tmin, tmax, dt, evnts_raw, evnt_align=False):
     return torch.tensor(tsave), gtid, evnts, tse
 
 
-def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0], predict_first=True, rtol=1.0e-5, atol=1.0e-7):
+def forward_pass(func, z0, tspan, dt, batch, evnt_align, gs_info=None, type_forecast=[0.0], predict_first=True, rtol=1.0e-5, atol=1.0e-7):
     # merge the sequences to create a sequence
     evnts_raw = sorted([(evnt[0],) + (sid,) + evnt[1:] for sid in range(len(batch)) for evnt in batch[sid]])
 
@@ -137,6 +137,9 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0], pr
     trace = odeint(func, z0.repeat(len(batch), 1), tsave, method='jump_adams', rtol=rtol, atol=atol)
     params = func.L(trace)
     lmbda = params[..., :func.dim_N]
+
+    if gs_info is not None:
+        lmbda[:, :, :] = torch.tensor(gs_info[0])
 
     def integrate(tt, ll):
         lm = (ll[:-1, ...] + ll[1:, ...]) / 2.0
@@ -165,6 +168,10 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, type_forecast=[0.0], pr
         gsmean = params[..., func.dim_N*(1+func.dim_E*0):func.dim_N*(1+func.dim_E*1)].view(params.shape[:-1]+(func.dim_N, func.dim_E))
         logvar = params[..., func.dim_N*(1+func.dim_E*1):func.dim_N*(1+func.dim_E*2)].view(params.shape[:-1]+(func.dim_N, func.dim_E))
         var = torch.exp(logvar)
+
+        if gs_info is not None:
+            gsmean[:, :, :] = torch.tensor(gs_info[1])
+            var[:, :, :] = torch.tensor(gs_info[2])
 
         def log_normal_pdf(loc, k):
             const = torch.log(torch.tensor(2.0*np.pi))
