@@ -145,10 +145,12 @@ if __name__ == '__main__':
 
     # initialize / load model
     func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=32, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.Tanh(), ortho=True, evnt_embedding="continuous")
-    c0 = torch.randn(dim_c, requires_grad=True)
+    c0 = torch.randn(dim_c)
     h0 = torch.zeros(dim_h)
     it0 = 0
-    optimizer = optim.LBFGS(list(func.parameters())+[c0], max_iter=20)
+
+#   optimizer = optim.LBFGS(func.parameters(), max_iter=20)
+    optimizer = optim.Adam(func.parameters(), lr=1e-3, weight_decay=1e-5)
 
     if args.restart:
         checkpoint = torch.load(args.paramr)
@@ -156,7 +158,7 @@ if __name__ == '__main__':
         c0 = checkpoint['c0']
         h0 = checkpoint['h0']
         it0 = checkpoint['it0']
-        # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     # if read from history, then fit to maximize likelihood
     it = it0 - (1 if args.restart else 0)
@@ -166,8 +168,11 @@ if __name__ == '__main__':
                 # clear out gradients for variables
                 optimizer.zero_grad()
 
+                # random initial
+                c0 = torch.randn(dim_c)
+
                 # forward pass
-                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_tr, dt, TSTR, args.evnt_align, gs_info=gs_info)
+                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_tr, dt, TSTR, args.evnt_align)
 
                 # backward prop
                 func.backtrace.clear()
@@ -181,19 +186,20 @@ if __name__ == '__main__':
 
             it = it+1
 
-            # validation
-            optimizer.zero_grad()
-            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_va, dt, TSVA, args.evnt_align, gs_info=gs_info)
+            if it % args.nsave == 0:
+                # validation
+                optimizer.zero_grad()
+                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_va, dt, TSVA, args.evnt_align)
 
-            func.backtrace.clear()
-            loss.backward()
-            print("iter: {}, validation loss: {:10.4f}, type error: {}".format(it, loss.item(), mete), flush=True)
+                func.backtrace.clear()
+                loss.backward()
+                print("iter: {}, validation loss: {:10.4f}, type error: {}".format(it, loss.item(), mete), flush=True)
 
-            # visualize
-            tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
-            trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-            visualize_(outpath, tsave, gtid[0::4], lmbda, gsmean, gsvar, TSVA[0], it)
-            visualize(outpath, tsave, trace, lmbda, tsave_, trace_, None, None, None, range(len(TSVA)), it)
+                # visualize
+                tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
+                trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
+                visualize_(outpath, tsave, gtid[0::4], lmbda, gsmean, gsvar, TSVA[0], it)
+                visualize(outpath, tsave, trace, lmbda, tsave_, trace_, None, None, None, range(len(TSVA)), it)
 
-            # save
-            torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + '{:04d}'.format(it) + args.paramw)
+                # save
+                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + '{:04d}'.format(it) + args.paramw)
