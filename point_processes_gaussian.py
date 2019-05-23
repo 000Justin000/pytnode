@@ -48,7 +48,7 @@ def read_timeseries(filename, scale=1.0, num_seqs=sys.maxsize):
 #       for i in range(1, len(ts)):
 #           events.append((float(ts[i])*scale, [float(ts[i])*scale - float(ts[i-1])*scale]))
         for i in range(len(ts)):
-            events.append((float(ts[i])*scale, np.sin(float(ts[i])*scale)))
+            events.append((float(ts[i])*scale, 1.0))
         timeseries.append(events)
 
     return timeseries
