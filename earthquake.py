@@ -140,8 +140,8 @@ if __name__ == '__main__':
     TSTR, TSVA, tspan_tr, tspan_va = read_earthquake(1.0/52.0/7.0/24.0/3600.0)
 
     # baseline
-    # gs_info = estimate_density(TSTR[0], tspan_tr)
-    gs_info = None
+    gs_info = estimate_density(TSTR[0], tspan_tr)
+    # gs_info = None
 
     # initialize / load model
     func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=32, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.Tanh(), ortho=True, evnt_embedding="continuous")
@@ -156,7 +156,7 @@ if __name__ == '__main__':
         c0 = checkpoint['c0']
         h0 = checkpoint['h0']
         it0 = checkpoint['it0']
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     # if read from history, then fit to maximize likelihood
     it = it0 - (1 if args.restart else 0)
