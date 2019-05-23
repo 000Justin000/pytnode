@@ -44,9 +44,11 @@ def read_timeseries(filename, scale=1.0, num_seqs=sys.maxsize):
     timeseries = []
     for seq in seqs:
         ts = seq.split(';')[0].split()
-        events = [] if len(ts) == 0 else [(float(ts[0])*scale, [float(ts[0])*scale])]
-        for i in range(1, len(ts)):
-            events.append((float(ts[i])*scale, [float(ts[i])*scale - float(ts[i-1])*scale]))
+#       events = [] if len(ts) == 0 else [(float(ts[0])*scale, [float(ts[0])*scale])]
+#       for i in range(1, len(ts)):
+#           events.append((float(ts[i])*scale, [float(ts[i])*scale - float(ts[i-1])*scale]))
+        for i in range(len(ts)):
+            events.append((float(ts[i])*scale, np.sin(float(ts[i])*scale)))
         timeseries.append(events)
 
     return timeseries
@@ -62,7 +64,7 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dt, tspan = 5, 5, 1, np.pi/200.0, (0.0, np.pi*5)
+    dim_c, dim_h, dim_N, dt, tspan = 10, 10, 1, np.pi/200.0, (0.0, np.pi*5)
     path = "./data/point_processes/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv", np.pi/20.0)
     TSVA = read_timeseries(path + args.dataset + "_validation.csv", np.pi/20.0)
