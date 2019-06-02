@@ -12,6 +12,7 @@ import torch.optim as optim
 from modules import RunningAverageMeter, ODEJumpFunc
 from utils import forward_pass, visualize, create_outpath
 from sklearn import mixture
+from earthquake_utils import EarthquakeGenerator
 
 
 signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
@@ -137,6 +138,9 @@ if __name__ == '__main__':
         torch.manual_seed(0)
 
     dim_c, dim_h, dim_N, dim_E, dt = 10, 10, 5, 2, 1.0/52.0
+    eg = EarthquakeGenerator()
+
+
     TSTR, TSVA, tspan_tr, tspan_va = read_earthquake(1.0/52.0/7.0/24.0/3600.0)
 
     # baseline
