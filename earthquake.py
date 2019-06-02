@@ -128,11 +128,11 @@ if __name__ == '__main__':
 
     dim_c, dim_h, dim_N, dim_E, dt = 10, 10, 5, 2, 1.0/52.0
     tspan_tr = (0.0, 35.12)
-    tspan_va = (0.0, 50.00)
+    tspan_va = (0.0, 49.41)
     eg = EarthquakeGenerator()
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=32, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.Tanh(), ortho=True, evnt_embedding="continuous")
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=32, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
     c0 = torch.randn(dim_c)
     h0 = torch.zeros(dim_h)
     it0 = 0
