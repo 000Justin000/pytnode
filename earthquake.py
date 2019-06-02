@@ -69,7 +69,7 @@ def visualize_(outpath, tsave, gtid, lmbda, gsmean, gsvar, events, itr):
             plt.scatter(events_current[:, 0], events_current[:, 1], 3.0, c="red")
         plt.scatter(gaussian_center[:, 0], gaussian_center[:, 1], 3.0, c="orange")
 
-        plt.savefig(outpath + '/{:04d}_{:04d}.svg'.format(itr, i), dpi=250)
+        plt.savefig(outpath + '/{:04d}_{:04d}.png'.format(itr, i), dpi=250)
         fig.clf()
         plt.close(fig)
 
@@ -182,7 +182,7 @@ if __name__ == '__main__':
                 optimizer.zero_grad()
 
                 # generate event sequence
-                TSVA = eg.event_seqs(centers=[np.radians([37.229564, -120.047533])], num_seqs=1, radius=0.2, scale=1.0/52.0/7.0/24.0/3600.0)
+                TSVA = eg.event_seqs(centers=[np.radians([37.229564, -120.047533])], num_seqs=1, radius=0.2, scale=1.0/52.0/7.0/24.0/3600.0, rand_rot=False)
 
                 tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_va, dt, TSVA, args.evnt_align)
 
