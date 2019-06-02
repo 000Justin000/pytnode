@@ -13,7 +13,7 @@ class EarthquakeGenerator:
     # read earthquakes, return latitudes, logitiudes and timestamps for
     # earthquke with magitude greater than 4.0
     def __init__(self):
-        dat = pd.read_csv("earthquakes.csv")
+        dat = pd.read_csv("data/earthquakes/earthquakes.csv")
         leid = np.where(np.array(dat["mag"] > 4.0))[0]
 
         self.lats = np.radians(np.array(dat["latitude"][leid]))
@@ -78,7 +78,7 @@ class EarthquakeGenerator:
         event_seqs = []
         for center, ids in zip(centers, idxsets):
             center_coord = np.array([np.cos(center[0])*np.cos(center[1]), np.cos(center[0])*np.sin(center[1]), np.sin(center[0])])
-            event_coords = np.array([np.cos(lats[ids])*np.cos(lons[ids]), np.cos(lats[ids])*np.sin(lons[ids]), np.sin(lats[ids])]).T
+            event_coords = np.array([np.cos(lats[ids])*np.cos(lons[ids]), np.cos(lats[ids])*np.sin(lons[ids]), np.sin(lats[ids])]).T - center_coord
             event_embeddings = np.dot(event_coords, self.ortho_axes(center_coord, rand_rot))
             event_times = self.ts[ids]
 
