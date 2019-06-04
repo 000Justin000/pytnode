@@ -40,22 +40,14 @@ if not args.debug:
 def read_timeseries(filename, scale=1.0, num_seqs=sys.maxsize):
     with open(filename) as f:
         seqs = f.readlines()[:num_seqs]
-
     timeseries = []
     for seq in seqs:
         ts = seq.split(';')[0].split()
-        events = [] 
-        
-#       events.append((float(ts[0])*scale, [float(ts[0])*scale]))
-#       for i in range(1, len(ts)):
-#           events.append((float(ts[i])*scale, [float(ts[i])*scale - float(ts[i-1])*scale]))
-
-        for i in range(len(ts)):
-            events.append((float(ts[i])*scale, [np.sin(float(ts[i])*scale)]))
+        events = [] if len(ts) == 0 else [(float(ts[0])*scale, [float(ts[0])*scale])]
+        for i in range(1, len(ts)):
+            events.append((float(ts[i])*scale, [float(ts[i])*scale - float(ts[i-1])*scale]))
         timeseries.append(events)
-
     return timeseries
-
 
 if __name__ == '__main__':
     # write all parameters to output file
@@ -67,7 +59,7 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dt, tspan = 10, 10, 1, np.pi/200.0, (0.0, np.pi*5)
+    dim_c, dim_h, dim_N, dt, tspan = 5, 5, 1, np.pi/200.0, (0.0, np.pi*5)
     path = "./data/point_processes/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv", np.pi/20.0)
     TSVA = read_timeseries(path + args.dataset + "_validation.csv", np.pi/20.0)
@@ -151,9 +143,10 @@ if __name__ == '__main__':
 
     # computing testing error
     tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align)
-    visualize(outpath, tsave, trace, lmbda, None, None, tsave[gtid], lmbda_te_real, tsne, range(len(TSTE)), it, appendix="testing", gsmean=gsmean)
+    # visualize(outpath, tsave, trace, lmbda, None, None, tsave[gtid], lmbda_te_real, tsne, range(len(TSTE)), it, appendix="testing", gsmean=gsmean)
     print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)
 
+    x = 5
 #   import matplotlib.pyplot as plt
 #   i = 6
 #   plt.figure(figsize=(10, 3), facecolor='white');
