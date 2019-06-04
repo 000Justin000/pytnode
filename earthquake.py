@@ -47,7 +47,7 @@ def visualize_(outpath, tsave, gtid, lmbda, gsmean, gsvar, events, itr):
         gaussian_center = gsmean[gtid[i], 0, :, :].detach().numpy()
         gaussian_var = gsvar[gtid[i], 0, :, :].detach().numpy()
 
-        x, y = np.meshgrid(np.linspace(-0.2, 0.2, 500), np.linspace(-0.2, 0.2, 500))
+        x, y = np.meshgrid(np.linspace(-0.5, 0.5, 500), np.linspace(-0.5, 0.5, 500))
         density = np.zeros(x.shape)
         for gs_weight, gs_center, gs_var in zip(gaussian_weight, gaussian_center, gaussian_var):
             gs_pdf = np.exp(-0.5*((x-gs_center[0])**2.0/gs_var[0] +
@@ -59,8 +59,8 @@ def visualize_(outpath, tsave, gtid, lmbda, gsmean, gsvar, events, itr):
         axe.set_title('Earthquakes')
         axe.set_xlabel('longitude')
         axe.set_ylabel('latitude')
-        axe.set_xlim(-0.2, 0.2)
-        axe.set_ylim(-0.2, 0.2)
+        axe.set_xlim(-0.5, 0.5)
+        axe.set_ylim(-0.5, 0.5)
 
         cs = plt.contour(x, y, density, levels=[2**j for j in range(-10, 10)])
         plt.clabel(cs, inline=1, fontsize=10)
@@ -87,7 +87,7 @@ def estimate_density(events, tspan):
     gaussian_center = clf.means_
     gaussian_var = clf.covariances_
 
-    x, y = np.meshgrid(np.linspace(-0.2, 0.2, 500), np.linspace(-0.2, 0.2, 500))
+    x, y = np.meshgrid(np.linspace(-0.5, 0.5, 500), np.linspace(-0.5, 0.5, 500))
     density = np.zeros(x.shape)
     for gs_weight, gs_center, gs_var in zip(gaussian_weight, gaussian_center, gaussian_var):
         gs_pdf = np.exp(-0.5*((x-gs_center[0])**2.0/gs_var[0] +
@@ -99,8 +99,8 @@ def estimate_density(events, tspan):
     axe.set_title('Earthquakes')
     axe.set_xlabel('longitude')
     axe.set_ylabel('latitude')
-    axe.set_xlim(-0.2, 0.2)
-    axe.set_ylim(-0.2, 0.2)
+    axe.set_xlim(-0.5, 0.5)
+    axe.set_ylim(-0.5, 0.5)
 
     cs = plt.contour(x, y, density, levels=[2**j for j in range(-10, 10)])
     plt.clabel(cs, inline=1, fontsize=10)
@@ -193,7 +193,7 @@ if __name__ == '__main__':
                 # visualize
                 tsave_ = torch.tensor([record[0] for record in reversed(func.backtrace)])
                 trace_ = torch.stack(tuple(record[1] for record in reversed(func.backtrace)))
-                visualize_(outpath, tsave, gtid[0::4], lmbda, gsmean, gsvar, TSVA[0], it)
+                visualize_(outpath, tsave, gtid[0::52], lmbda, gsmean, gsvar, TSVA[0], it)
                 visualize(outpath, tsave, trace, lmbda, tsave_, trace_, None, None, None, range(len(TSVA)), it)
 
                 # save
