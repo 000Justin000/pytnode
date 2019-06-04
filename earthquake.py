@@ -12,6 +12,7 @@ import torch.optim as optim
 from modules import RunningAverageMeter, ODEJumpFunc
 from utils import forward_pass, visualize, create_outpath
 from sklearn import mixture
+from earthquake_utils import EarthquakeGenerator
 
 
 signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
@@ -37,27 +38,16 @@ if not args.debug:
     sys.stdout = open(outpath + '/' + commit + '.log', 'w')
     sys.stderr = open(outpath + '/' + commit + '.err', 'w')
 
-center_of_labels = (-119.315, 37.25)
-
-def read_earthquake(scale=1.0):
-    dat = np.loadtxt('./data/earthquakes/events')
-
-    # cut off 2015-01-01
-    tr = [[(evnt[0]*scale, tuple(evnt[-1:0:-1] - center_of_labels)) for evnt in dat if evnt[0] < 1104537600]]
-    te = [[(evnt[0]*scale, tuple(evnt[-1:0:-1] - center_of_labels)) for evnt in dat]]
-
-    return tr, te, (0, 1104537600*scale), (0, 1554076800*scale)
-
 def visualize_(outpath, tsave, gtid, lmbda, gsmean, gsvar, events, itr):
     for i in range(len(gtid)-1):
-        events_current = np.array([np.array(evnt[1])+np.array(center_of_labels) for evnt in events
+        events_current = np.array([np.array(evnt[1]) for evnt in events
                                    if (tsave[gtid[i]] < evnt[0] < tsave[gtid[i+1]])])
 
         gaussian_weight = lmbda[gtid[i], 0, :].detach().numpy()
-        gaussian_center = gsmean[gtid[i], 0, :, :].detach().numpy() + center_of_labels
+        gaussian_center = gsmean[gtid[i], 0, :, :].detach().numpy()
         gaussian_var = gsvar[gtid[i], 0, :, :].detach().numpy()
 
-        x, y = np.meshgrid(np.linspace(-124.5, -114.13, 500), np.linspace(32.5, 42.0, 300))
+        x, y = np.meshgrid(np.linspace(-0.2, 0.2, 500), np.linspace(-0.2, 0.2, 500))
         density = np.zeros(x.shape)
         for gs_weight, gs_center, gs_var in zip(gaussian_weight, gaussian_center, gaussian_var):
             gs_pdf = np.exp(-0.5*((x-gs_center[0])**2.0/gs_var[0] +
@@ -69,17 +59,17 @@ def visualize_(outpath, tsave, gtid, lmbda, gsmean, gsvar, events, itr):
         axe.set_title('Earthquakes')
         axe.set_xlabel('longitude')
         axe.set_ylabel('latitude')
-        axe.set_xlim(-124.5, -114.13)
-        axe.set_ylim(32.5, 42)
+        axe.set_xlim(-0.2, 0.2)
+        axe.set_ylim(-0.2, 0.2)
 
-        cs = plt.contour(x, y, density, levels=[2**j for j in range(-8, 2)])
+        cs = plt.contour(x, y, density, levels=[2**j for j in range(-10, 10)])
         plt.clabel(cs, inline=1, fontsize=10)
 
         if len(events_current) != 0:
             plt.scatter(events_current[:, 0], events_current[:, 1], 3.0, c="red")
         plt.scatter(gaussian_center[:, 0], gaussian_center[:, 1], 3.0, c="orange")
 
-        plt.savefig(outpath + '/{:04d}_{:04d}.svg'.format(itr, i), dpi=250)
+        plt.savefig(outpath + '/{:04d}_{:04d}.png'.format(itr, i), dpi=250)
         fig.clf()
         plt.close(fig)
 
@@ -89,7 +79,7 @@ def estimate_density(events, tspan):
         np.random.seed(0)
         torch.manual_seed(0)
 
-    X = np.array([np.array(evnt[1]) + np.array(center_of_labels) for evnt in events])
+    X = np.array([np.array(evnt[1]) for evnt in events])
     clf = mixture.GaussianMixture(n_components=5, covariance_type="diag")
     clf.fit(X)
 
@@ -97,7 +87,7 @@ def estimate_density(events, tspan):
     gaussian_center = clf.means_
     gaussian_var = clf.covariances_
 
-    x, y = np.meshgrid(np.linspace(-124.5, -114.13, 500), np.linspace(32.5, 42.0, 300))
+    x, y = np.meshgrid(np.linspace(-0.2, 0.2, 500), np.linspace(-0.2, 0.2, 500))
     density = np.zeros(x.shape)
     for gs_weight, gs_center, gs_var in zip(gaussian_weight, gaussian_center, gaussian_var):
         gs_pdf = np.exp(-0.5*((x-gs_center[0])**2.0/gs_var[0] +
@@ -109,10 +99,10 @@ def estimate_density(events, tspan):
     axe.set_title('Earthquakes')
     axe.set_xlabel('longitude')
     axe.set_ylabel('latitude')
-    axe.set_xlim(-124.5, -114.13)
-    axe.set_ylim(32.5, 42)
+    axe.set_xlim(-0.2, 0.2)
+    axe.set_ylim(-0.2, 0.2)
 
-    cs = plt.contour(x, y, density, levels=[2**j for j in range(-8, 2)])
+    cs = plt.contour(x, y, density, levels=[2**j for j in range(-10, 10)])
     plt.clabel(cs, inline=1, fontsize=10)
 
     if len(X) != 0:
@@ -123,7 +113,7 @@ def estimate_density(events, tspan):
     fig.clf()
     plt.close(fig)
 
-    return (gaussian_weight, gaussian_center - np.array(center_of_labels), gaussian_var)
+    return (gaussian_weight, gaussian_center, gaussian_var)
 
 
 if __name__ == '__main__':
@@ -137,14 +127,12 @@ if __name__ == '__main__':
         torch.manual_seed(0)
 
     dim_c, dim_h, dim_N, dim_E, dt = 10, 10, 5, 2, 1.0/52.0
-    TSTR, TSVA, tspan_tr, tspan_va = read_earthquake(1.0/52.0/7.0/24.0/3600.0)
-
-    # baseline
-    gs_info = estimate_density(TSTR[0], tspan_tr)
-    # gs_info = None
+    tspan_tr = (0.0, 35.12)
+    tspan_va = (0.0, 49.41)
+    eg = EarthquakeGenerator()
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=32, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.Tanh(), ortho=True, evnt_embedding="continuous")
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=32, num_hidden=1, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
     c0 = torch.randn(dim_c)
     h0 = torch.zeros(dim_h)
     it0 = 0
@@ -171,6 +159,9 @@ if __name__ == '__main__':
                 # random initial
                 c0 = torch.randn(dim_c)
 
+                # generate event sequences
+                TSTR = eg.event_seqs(num_seqs=args.batch_size, radius=0.2, scale=1.0/52.0/7.0/24.0/3600.0, time_cutoff=35.12)
+
                 # forward pass
                 tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_tr, dt, TSTR, args.evnt_align)
 
@@ -189,6 +180,10 @@ if __name__ == '__main__':
             if it % args.nsave == 0:
                 # validation
                 optimizer.zero_grad()
+
+                # generate event sequence
+                TSVA = eg.event_seqs(centers=[np.radians([37.229564, -120.047533])], num_seqs=1, radius=0.2, scale=1.0/52.0/7.0/24.0/3600.0, rand_rot=False)
+
                 tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan_va, dt, TSVA, args.evnt_align)
 
                 func.backtrace.clear()
