@@ -145,13 +145,3 @@ if __name__ == '__main__':
     tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align)
     # visualize(outpath, tsave, trace, lmbda, None, None, tsave[gtid], lmbda_te_real, tsne, range(len(TSTE)), it, appendix="testing", gsmean=gsmean)
     print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)
-
-    x = 5
-#   import matplotlib.pyplot as plt
-#   i = 6
-#   plt.figure(figsize=(10, 3), facecolor='white');
-#   plt.plot(tsave.numpy() * 100.0 / (np.pi * 5.0), gsmean[:, i, 0, 0].detach().numpy(), linewidth=1.5, linestyle="dotted", color="black");
-#   events_time = [evnt[0] * 100 / (5 * np.pi) for evnt in TSTE[i]];
-#   events_embedding = [evnt[1][0] for evnt in TSTE[i]];
-#   plt.scatter(events_time, events_embedding, 5.0);
-#   plt.savefig("00.svg");
