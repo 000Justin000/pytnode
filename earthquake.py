@@ -132,7 +132,7 @@ if __name__ == '__main__':
     eg = EarthquakeGenerator()
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=32, num_hidden=5, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
+    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_E, dim_hidden=32, num_hidden=8, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), ortho=True, evnt_embedding="continuous")
     c0 = torch.randn(dim_c)
     h0 = torch.zeros(dim_h)
     it0 = 0
