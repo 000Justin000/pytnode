@@ -4,10 +4,10 @@ import signal
 import argparse
 import random
 import numpy as np
-import matplotlib
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import matplotlib
 from modules import RunningAverageMeter, ODEJumpFunc
 from utils import poisson_lmbda, exponential_hawkes_lmbda, powerlaw_hawkes_lmbda, self_inhibiting_lmbda, forward_pass, visualize, create_outpath, read_timeseries
 
@@ -48,7 +48,7 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dt, tspan = 3, 2, 1, 0.05, (0.0, 100.0)
+    dim_z, num_e, dt, tspan = 3, 1, 0.05, (0.0, 100.0)
     path = "./data/point_processes/"
     TSTR = read_timeseries(path + args.dataset + "_training.csv")
     TSVA = read_timeseries(path + args.dataset + "_validation.csv")
@@ -68,19 +68,18 @@ if __name__ == '__main__':
         lmbda_te_real = self_inhibiting_lmbda(tspan[0], tspan[1], dt, 0.5, 0.2, TSTE, args.evnt_align)
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=20, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU())
-    c0 = torch.randn(dim_c, requires_grad=True)
-    h0 = torch.zeros(dim_h)
+    func = ODEJumpFunc(dim_z, num_e, num_e, dim_h=32, num_h=0, jump_type=args.jump_type, evnt_align=args.evnt_align)
+    z0 = torch.zeros(dim_z, requires_grad=True)
+
     it0 = 0
     optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': c0, 'lr': 1.0e-2},
+                            {'params': z0, 'lr': 1.0e-2},
                             ], lr=1e-3, weight_decay=1e-5)
 
     if args.restart:
         checkpoint = torch.load(args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
-        c0 = checkpoint['c0']
-        h0 = checkpoint['h0']
+        z0 = checkpoint['z0']
         it0 = checkpoint['it0']
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
@@ -98,7 +97,7 @@ if __name__ == '__main__':
             batch = [TSTR[seqid] for seqid in batch_id]
 
             # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align)
+            tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, z0, tspan, dt, batch, args.evnt_align)
             loss_meter.update(loss.item() / len(batch))
 
             # backward prop
@@ -114,7 +113,7 @@ if __name__ == '__main__':
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align)
+                tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, z0, tspan, dt, TSVA, args.evnt_align)
 
                 # backward prop
                 func.backtrace.clear()
@@ -127,15 +126,15 @@ if __name__ == '__main__':
                 visualize(outpath, tsave, trace, lmbda, tsave_, trace_, tsave[gtid], lmbda_va_real, tsne, range(len(TSVA)), it)
 
                 # save
-                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
+                torch.save({'func_state_dict': func.state_dict(), 'z0': z0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
 
 
     # computing testing error
-    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align)
+    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, z0, tspan, dt, TSTE, args.evnt_align)
     visualize(outpath, tsave, trace, lmbda, None, None, tsave[gtid], lmbda_te_real, tsne, range(len(TSTE)), it, "testing")
     print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)
 
     # simulate events
     func.jump_type="simulate"
-    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, [[]]*10, args.evnt_align)
+    tsave, trace, lmbda, gtid, tsne, loss, mete = forward_pass(func, z0, tspan, dt, [[]]*10, args.evnt_align)
     visualize(outpath, tsave, trace, lmbda, None, None, None, None, tsne, range(10), it, "simulate")

@@ -136,7 +136,7 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, gs_info=None, type_fore
     # forward pass
     trace = odeint(func, z0.repeat(len(batch), 1), tsave, method='jump_adams', rtol=rtol, atol=atol)
     params = func.L(trace)
-    lmbda = params[..., :func.dim_N]
+    lmbda = params[..., :func.num_e]
 
     if gs_info is not None:
         lmbda[:, :, :] = torch.tensor(gs_info[0])
@@ -165,8 +165,8 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, gs_info=None, type_fore
         METE = sum(et_error)/len(et_error) if len(et_error) > 0 else -torch.ones(len(type_forecast))
 
     elif func.evnt_embedding == "continuous":
-        gsmean = params[..., func.dim_N*(1+func.dim_E*0):func.dim_N*(1+func.dim_E*1)].view(params.shape[:-1]+(func.dim_N, func.dim_E))
-        logvar = params[..., func.dim_N*(1+func.dim_E*1):func.dim_N*(1+func.dim_E*2)].view(params.shape[:-1]+(func.dim_N, func.dim_E))
+        gsmean = params[..., func.num_e*(1+func.dim_e*0):func.num_e*(1+func.dim_e*1)].view(params.shape[:-1]+(func.num_e, func.dim_e))
+        logvar = params[..., func.num_e*(1+func.dim_e*1):func.num_e*(1+func.dim_e*2)].view(params.shape[:-1]+(func.num_e, func.dim_e))
         var = torch.exp(logvar)
 
         if gs_info is not None:
@@ -183,10 +183,10 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, gs_info=None, type_fore
             log_likelihood += logsumexp(lmbda[evnt[:-1]].log() + log_gs, dim=-1)
             if evnt[1] in seqs_happened:
                 # mean_pred embedding
-                mean_preds = torch.zeros(len(type_forecast), func.dim_E)
+                mean_preds = torch.zeros(len(type_forecast), func.dim_e)
                 for tid, t in enumerate(type_forecast):
                     loc = (np.searchsorted(tsavenp, tsave[evnt[0]].item()-t),) + evnt[1:-1]
-                    mean_preds[tid] = ((lmbda[loc].view(func.dim_N, 1) * gsmean[loc]).sum(dim=0) / lmbda[loc].sum()).detach()
+                    mean_preds[tid] = ((lmbda[loc].view(func.num_e, 1) * gsmean[loc]).sum(dim=0) / lmbda[loc].sum()).detach()
                 et_error.append((mean_preds - func.evnt_embed(evnt[-1])).norm(dim=-1)**2.0)
             seqs_happened.add(evnt[1])
 
@@ -196,7 +196,6 @@ def forward_pass(func, z0, tspan, dt, batch, evnt_align, gs_info=None, type_fore
         return tsave, trace, lmbda, gtid, tse, -log_likelihood, METE
     elif func.evnt_embedding == "continuous":
         return tsave, trace, lmbda, gtid, tse, -log_likelihood, METE, gsmean, var
-
 
 
 def poisson_lmbda(tmin, tmax, dt, lmbda0, TS):

@@ -59,11 +59,11 @@ if __name__ == '__main__':
         np.random.seed(0)
         torch.manual_seed(0)
 
-    dim_c, dim_h, dim_N, dt, tspan = 5, 5, 1, np.pi/200.0, (0.0, np.pi*5)
+    dim_z, num_e, dt, tspan = 3, 1, 0.05, (0.0, 100.0)
     path = "./data/point_processes/"
-    TSTR = read_timeseries(path + args.dataset + "_training.csv", np.pi/20.0)
-    TSVA = read_timeseries(path + args.dataset + "_validation.csv", np.pi/20.0)
-    TSTE = read_timeseries(path + args.dataset + "_testing.csv", np.pi/20.0)
+    TSTR = read_timeseries(path + args.dataset + "_training.csv")
+    TSVA = read_timeseries(path + args.dataset + "_validation.csv")
+    TSTE = read_timeseries(path + args.dataset + "_testing.csv")
 
     if args.dataset == "poisson":
         lmbda_va_real = poisson_lmbda(tspan[0], tspan[1], dt, 0.2, TSVA)
@@ -79,19 +79,18 @@ if __name__ == '__main__':
         lmbda_te_real = self_inhibiting_lmbda(tspan[0], tspan[1], dt, 0.5, 0.2, TSTE, args.evnt_align)
 
     # initialize / load model
-    func = ODEJumpFunc(dim_c, dim_h, dim_N, dim_N, dim_hidden=20, num_hidden=1, ortho=True, jump_type=args.jump_type, evnt_align=args.evnt_align, activation=nn.CELU(), evnt_embedding="continuous")
-    c0 = torch.randn(dim_c, requires_grad=True)
-    h0 = torch.zeros(dim_h)
+    func = ODEJumpFunc(dim_z, num_e, num_e, dim_h=32, num_h=0, jump_type=args.jump_type, evnt_align=args.evnt_align, evnt_embedding="continuous")
+    z0 = torch.zeros(dim_z, requires_grad=True)
+
     it0 = 0
     optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': c0, 'lr': 1.0e-2},
+                            {'params': z0, 'lr': 1.0e-2},
                             ], lr=1e-3, weight_decay=1e-5)
 
     if args.restart:
         checkpoint = torch.load(args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
-        c0 = checkpoint['c0']
-        h0 = checkpoint['h0']
+        z0 = checkpoint['z0']
         it0 = checkpoint['it0']
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
@@ -109,7 +108,7 @@ if __name__ == '__main__':
             batch = [TSTR[seqid] for seqid in batch_id]
 
             # forward pass
-            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, batch, args.evnt_align)
+            tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, z0, tspan, dt, batch, args.evnt_align)
             loss_meter.update(loss.item() / len(batch))
 
             # backward prop
@@ -125,7 +124,7 @@ if __name__ == '__main__':
             # validate and visualize
             if it % args.nsave == 0:
                 # use the full validation set for forward pass
-                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSVA, args.evnt_align)
+                tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, z0, tspan, dt, TSVA, args.evnt_align)
 
                 # backward prop
                 func.backtrace.clear()
@@ -138,10 +137,10 @@ if __name__ == '__main__':
                 visualize(outpath, tsave, trace, lmbda, tsave_, trace_, tsave[gtid], lmbda_va_real, tsne, range(len(TSVA)), it, gsmean=gsmean)
 
                 # save
-                torch.save({'func_state_dict': func.state_dict(), 'c0': c0, 'h0': h0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
+                torch.save({'func_state_dict': func.state_dict(), 'z0': z0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
 
 
     # computing testing error
-    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, torch.cat((c0, h0), dim=-1), tspan, dt, TSTE, args.evnt_align)
+    tsave, trace, lmbda, gtid, tsne, loss, mete, gsmean, gsvar = forward_pass(func, z0, tspan, dt, TSTE, args.evnt_align)
     # visualize(outpath, tsave, trace, lmbda, None, None, tsave[gtid], lmbda_te_real, tsne, range(len(TSTE)), it, appendix="testing", gsmean=gsmean)
     print("iter: {}, testing loss: {:10.4f}, type error: {}".format(it, loss.item()/len(TSTE), mete), flush=True)

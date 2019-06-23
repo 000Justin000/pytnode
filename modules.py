@@ -49,16 +49,16 @@ class SoftPlus(nn.Module):
 # multi-layer perceptron
 class MLP(nn.Module):
 
-    def __init__(self, dim_in, dim_out, dim_hidden=20, num_hidden=0, activation=nn.CELU()):
+    def __init__(self, dim_in, dim_out, dim_h=32, num_h=0, activation=nn.Sigmoid()):
         super(MLP, self).__init__()
 
-        if num_hidden == 0:
+        if num_h == 0:
             self.linears = nn.ModuleList([nn.Linear(dim_in, dim_out)])
-        elif num_hidden >= 1:
+        elif num_h >= 1:
             self.linears = nn.ModuleList()
-            self.linears.append(nn.Linear(dim_in, dim_hidden))
-            self.linears.extend([nn.Linear(dim_hidden, dim_hidden) for _ in range(num_hidden-1)])
-            self.linears.append(nn.Linear(dim_hidden, dim_out))
+            self.linears.append(nn.Linear(dim_in, dim_h))
+            self.linears.extend([nn.Linear(dim_h, dim_h) for _ in range(num_h-1)])
+            self.linears.append(nn.Linear(dim_h, dim_out))
         else:
             raise Exception('number of hidden layers must be positive')
 
@@ -78,21 +78,21 @@ class MLP(nn.Module):
 # recurrent neural network
 class RNN(nn.Module):
 
-    def __init__(self, dim_in, dim_out, dim_hidden, num_hidden, activation):
+    def __init__(self, dim_in, dim_out, dim_h, num_h, activation):
         super(RNN, self).__init__()
 
         self.dim_in = dim_in
         self.dim_out = dim_out
-        self.dim_hidden = dim_hidden
-        self.i2h = MLP(dim_in+dim_hidden, dim_hidden, dim_hidden, num_hidden, activation)
-        self.h2o = MLP(dim_hidden, dim_out, dim_hidden, num_hidden, activation)
+        self.dim_h = dim_h
+        self.i2h = MLP(dim_in+dim_h, dim_h, dim_h, num_h, activation)
+        self.h2o = MLP(dim_h, dim_out, dim_h, num_h, activation)
         self.activation = activation
 
     def forward(self, x, h0=None):
         assert len(x.shape) > 2,  'z need to be at least a 2 dimensional vector accessed by [tid ... dim_id]'
 
         if h0 is None:
-            hh = [torch.zeros(x.shape[1:-1] + (self.dim_hidden,))]
+            hh = [torch.zeros(x.shape[1:-1] + (self.dim_h,))]
         else:
             hh = [h0]
 
@@ -106,12 +106,12 @@ class RNN(nn.Module):
 # graph convolution unit
 class GCU(nn.Module):
 
-    def __init__(self, dim_c, dim_h=0, dim_hidden=20, num_hidden=0, activation=nn.CELU(), graph=None, aggregation=None):
+    def __init__(self, dim_z, dim_h=32, num_h=0, activation=nn.Sigmoid(), graph=None, aggregation=None):
         super(GCU, self).__init__()
 
-        self.cur = nn.Sequential(MLP((dim_c+dim_h),   dim_hidden, dim_hidden, num_hidden, activation), activation)
-        self.nbr = nn.Sequential(MLP((dim_c+dim_h)*2, dim_hidden, dim_hidden, num_hidden, activation), activation)
-        self.out = nn.Linear(dim_hidden*2, dim_c)
+        self.cur = nn.Sequential(MLP(dim_z,   dim_h, dim_h, num_h, activation), activation)  # input dimension dim_z, output dimension dim_h
+        self.nbr = nn.Sequential(MLP(dim_z*2, dim_h, dim_h, num_h, activation), activation)  # input dimension dim_z*2, output dimension dim_h
+        self.out = nn.Sequential(nn.Linear(dim_h*2, dim_z), nn.Tanh())  # the output is saturated with Tanh
 
         nn.init.normal_(self.out.weight, mean=0, std=0.1)
         nn.init.uniform_(self.out.bias, a=-0.1, b=0.1)
@@ -142,97 +142,69 @@ class GCU(nn.Module):
 
         nbrvv = torch.stack([conv(nid) for nid in self.graph.nodes()], dim=-2)
 
-        dcdt = self.out(torch.cat((curvv, nbrvv), dim=-1))
+        dzdt = self.out(torch.cat((curvv, nbrvv), dim=-1))
 
-        return dcdt
+        return dzdt
 
 
 # This function need to be stateless
 class ODEFunc(nn.Module):
 
-    def __init__(self, dim_c, dim_hidden=20, num_hidden=0, activation=nn.CELU(), ortho=False, graph=None, aggregation=None):
+    def __init__(self, dim_z, dim_h=32, num_h=0, activation=nn.Sigmoid(), graph=None, aggregation=None):
         super(ODEFunc, self).__init__()
-
-        self.dim_c = dim_c
-        self.ortho = ortho
+        self.dim_z = dim_z
 
         if graph is not None:
-            self.F = GCU(dim_c, 0, dim_hidden, num_hidden, activation, aggregation, graph)
+            self.F = GCU(dim_z, dim_h, num_h, activation, aggregation, graph)
         else:
-            self.F = MLP(dim_c, dim_c, dim_hidden, num_hidden, activation)
+            self.F = nn.Sequential(MLP(dim_z, dim_z, dim_h, num_h, activation), nn.Tanh())  # the output is saturated with Tanh
 
-    def forward(self, t, c):
-        dcdt = self.F(c)
+        self.G = nn.Sequential(MLP(dim_z, dim_z, dim_h, num_h, activation), nn.Softplus())  # the decay rate is set positive with SoftPlus
 
-        # orthogonalize dc w.r.t. to c
-        if self.ortho:
-            dcdt = dcdt - (dcdt*c).sum(dim=-1, keepdim=True) / (c*c).sum(dim=-1, keepdim=True) * c
+    def forward(self, t, z):
+        dzdt = self.F(z) - self.G(z)*z  # we may consider adding a control gate to the dynamics term F
 
-        return dcdt
+        return dzdt
 
 
-# This function need to be stateless
-class ODEJumpFunc(nn.Module):
+class ODEJumpFunc(ODEFunc):
 
-    def __init__(self, dim_c, dim_h, dim_N, dim_E, dim_hidden=20, num_hidden=0, activation=nn.CELU(), ortho=False,
-                 jump_type="read", evnts=[], evnt_align=False, evnt_embedding="discrete",
-                 graph=None, aggregation=None):
-        super(ODEJumpFunc, self).__init__()
+    def __init__(self, dim_z, dim_e, num_e, dim_h=32, num_h=0, activation=nn.Sigmoid(),
+                 jump_type="read", evnts=[], evnt_embedding="discrete", evnt_align=False, graph=None, aggregation=None):
+        super(ODEJumpFunc, self).__init__(dim_z, dim_h, num_h, activation, graph, aggregation)
 
-        self.dim_c = dim_c
-        self.dim_h = dim_h
-        self.dim_N = dim_N  # number of event type
-        self.dim_E = dim_E  # dimension for encoding of event itself
-        self.ortho = ortho
-        self.evnt_embedding = evnt_embedding
+        assert (jump_type == "simulate" and len(evnts) == 0) or jump_type == "read", "jump_type must either be simulate (empty evnts list), or read"
 
-        assert jump_type in ["simulate", "read"], "invalide jump_type, must be one of [simulate, read]"
+        self.dim_e = dim_e              # dimension for event encoding
+        self.num_e = num_e              # number of different event type
         self.jump_type = jump_type
-        assert (jump_type == "simulate" and len(evnts) == 0) or jump_type == "read"
         self.evnts = evnts
+        self.evnt_embedding = evnt_embedding
         self.evnt_align = evnt_align
 
-        if graph is not None:
-            self.F = GCU(dim_c, dim_h, dim_hidden, num_hidden, activation, aggregation, graph)
-        else:
-            self.F = MLP(dim_c+dim_h, dim_c, dim_hidden, num_hidden, activation)
-
-        self.G = nn.Sequential(MLP(dim_c, dim_h, dim_hidden, num_hidden, activation), nn.Softplus())
+        self.I = nn.Sequential(MLP(dim_z, dim_z, dim_h, num_h, activation), nn.Sigmoid())
 
         if evnt_embedding == "discrete":
-            assert dim_E == dim_N, "if event embedding is discrete, then use one dimension for each event type"
-            self.evnt_embed = lambda k: (torch.arange(0, dim_E) == k).float()
-            # output is a dim_N vector, each represent conditional intensity of a type of event
-            self.L = nn.Sequential(MLP(dim_c+dim_h, dim_N, dim_hidden, num_hidden, activation), SoftPlus())
+            assert dim_e == num_e, "if event embedding is discrete, then use one dimension for each event type"
+            self.evnt_embed = lambda k: (torch.arange(0, dim_e) == k).float()
+            # output is a dim_e vector, each represent conditional intensity of a type of event
+            self.L = nn.Sequential(MLP(dim_z, dim_e, dim_h, num_h, activation), SoftPlus())
         elif evnt_embedding == "continuous":
             self.evnt_embed = lambda k: torch.tensor(k)
-            # output is a dim_N*(1+2*dim_E) vector, represent coefficients, mean and log variance of dim_N unit gaussian intensity function
-            self.L = nn.Sequential(MLP(dim_c+dim_h, dim_N*(1+2*dim_E), dim_hidden, num_hidden, activation), SoftPlus(dim=dim_N))
+            # output is a num_e*(1+2*dim_e) vector, represent coefficients, mean and log variance of num_e unit gaussian intensity function
+            self.L = nn.Sequential(MLP(dim_z, num_e*(1+2*dim_e), dim_h, num_h, activation), SoftPlus(dim=num_e))
         else:
             raise Exception('evnt_type must either be discrete or continuous')
 
-        self.W = MLP(dim_c+dim_E, dim_h, dim_hidden, num_hidden, activation)
+        self.W = nn.Sequential(MLP(dim_z+dim_e, dim_z, dim_h, num_h, activation), nn.Tanh())
 
         self.backtrace = []
 
-    def forward(self, t, z):
-        c = z[..., :self.dim_c]
-        h = z[..., self.dim_c:]
-
-        dcdt = self.F(z)
-
-        # orthogonalize dc w.r.t. to c
-        if self.ortho:
-            dcdt = dcdt - (dcdt*c).sum(dim=-1, keepdim=True) / (c*c).sum(dim=-1, keepdim=True) * c
-
-        dhdt = -self.G(c) * h
-
-        return torch.cat((dcdt, dhdt), dim=-1)
-
     def next_simulated_jump(self, t0, z0, t1):
+        lmbda = self.L(z0)[..., :self.num_e]
 
         if not self.evnt_align:
-            m = torch.distributions.Exponential(self.L(z0)[..., :self.dim_N].double())
+            m = torch.distributions.Exponential(lmbda.double())
             # next arrival time
             tt = t0 + m.sample()
             tt_min = tt.min()
@@ -246,7 +218,7 @@ class ODEJumpFunc(nn.Module):
         else:
             assert t0 < t1
 
-            lmbda_dt = self.L(z0) * (t1 - t0)
+            lmbda_dt = lmbda * (t1 - t0)
             rd = torch.rand(lmbda_dt.shape)
             dN = torch.zeros(lmbda_dt.shape)
             dN[rd < lmbda_dt ** 2 / 2] += 1
@@ -261,7 +233,6 @@ class ODEJumpFunc(nn.Module):
         dz = torch.zeros(z.shape)
         sequence = []
 
-        c = z[..., :self.dim_c]
         for idx in dN.nonzero():
             # find location and type of event
             loc, k = tuple(idx[:-1]), idx[-1]
@@ -274,15 +245,15 @@ class ODEJumpFunc(nn.Module):
                     sequence.extend([(t,) + loc + (k,)])
                 elif self.evnt_embedding == "continuous":
                     params = self.L(z[loc])
-                    gsmean = params[self.dim_N*(1+self.dim_E*0):self.dim_N*(1+self.dim_E*1)]
-                    logvar = params[self.dim_N*(1+self.dim_E*1):self.dim_N*(1+self.dim_E*2)]
-                    gsmean_k = gsmean[self.dim_E*k:self.dim_E*(k+1)]
-                    logvar_k = logvar[self.dim_E*k:self.dim_E*(k+1)]
+                    gsmean = params[self.num_e*(1+self.dim_e*0):self.num_e*(1+self.dim_e*1)]
+                    logvar = params[self.num_e*(1+self.dim_e*1):self.num_e*(1+self.dim_e*2)]
+                    gsmean_k = gsmean[self.dim_e*k:self.dim_e*(k+1)]
+                    logvar_k = logvar[self.dim_e*k:self.dim_e*(k+1)]
                     kv = self.evnt_embed(torch.randn(gsmean_k.shape) * torch.exp(0.5*logvar_k) + gsmean)
                     sequence.extend([(t,) + loc + (kv,)])
 
                 # add to jump
-                dz[loc][self.dim_c:] += self.W(torch.cat((c[loc], kv), dim=-1))
+                dz[loc] += self.I(z[loc]) * self.W(torch.cat((z[loc], kv), dim=-1))
 
         self.evnts.extend(sequence)
 
@@ -295,12 +266,12 @@ class ODEJumpFunc(nn.Module):
         t = t1
         inf = sys.maxsize
         if t0 < t1:  # forward
-            idx = bisect.bisect_right(self.evnts, (t0, inf, inf, inf))
+            idx = bisect.bisect_right(self.evnts, (t0, inf))
             if idx != len(self.evnts):
                 t = min(t1, torch.tensor(self.evnts[idx][0], dtype=torch.float64))
         else:  # backward
-            idx = bisect.bisect_left(self.evnts, (t0, -inf, -inf, -inf))
-            if idx > 0:
+            idx = bisect.bisect_left(self.evnts, (t0, -inf))
+            if idx != 0:
                 t = max(t1, torch.tensor(self.evnts[idx-1][0], dtype=torch.float64))
 
         assert t != t0, "t can not equal t0"
@@ -311,10 +282,9 @@ class ODEJumpFunc(nn.Module):
         dz = torch.zeros(z.shape)
 
         inf = sys.maxsize
-        lid = bisect.bisect_left(self.evnts, (t, -inf, -inf, -inf))
-        rid = bisect.bisect_right(self.evnts, (t, inf, inf, inf))
+        lid = bisect.bisect_left(self.evnts, (t, -inf))
+        rid = bisect.bisect_right(self.evnts, (t, inf))
 
-        c = z[..., :self.dim_c]
         for evnt in self.evnts[lid:rid]:
             # find location and type of event
             loc, k = evnt[1:-1], evnt[-1]
@@ -323,6 +293,6 @@ class ODEJumpFunc(nn.Module):
             kv = self.evnt_embed(k)
 
             # add to jump
-            dz[loc][self.dim_c:] += self.W(torch.cat((c[loc], kv), dim=-1))
+            dz[loc] += self.I(z[loc]) * self.W(torch.cat((z[loc], kv), dim=-1))
 
         return dz
