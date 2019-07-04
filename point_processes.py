@@ -69,17 +69,14 @@ if __name__ == '__main__':
 
     # initialize / load model
     func = ODEJumpFunc(dim_z, num_e, num_e, dim_h=32, num_h=0, jump_type=args.jump_type, evnt_align=args.evnt_align)
-    z0 = torch.zeros(dim_z, requires_grad=True)
+    z0 = torch.zeros(dim_z)
 
     it0 = 0
-    optimizer = optim.Adam([{'params': func.parameters()},
-                            {'params': z0, 'lr': 1.0e-2},
-                            ], lr=1e-3, weight_decay=1e-5)
+    optimizer = optim.Adam([{'params': func.parameters()}], lr=1e-3, weight_decay=1e-5)
 
     if args.restart:
         checkpoint = torch.load(args.paramr)
         func.load_state_dict(checkpoint['func_state_dict'])
-        z0 = checkpoint['z0']
         it0 = checkpoint['it0']
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
@@ -126,7 +123,7 @@ if __name__ == '__main__':
                 visualize(outpath, tsave, trace, lmbda, tsave_, trace_, tsave[gtid], lmbda_va_real, tsne, range(len(TSVA)), it)
 
                 # save
-                torch.save({'func_state_dict': func.state_dict(), 'z0': z0, 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
+                torch.save({'func_state_dict': func.state_dict(), 'it0': it, 'optimizer_state_dict': optimizer.state_dict()}, outpath + '/' + args.paramw)
 
 
     # computing testing error
