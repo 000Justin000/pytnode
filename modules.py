@@ -196,7 +196,8 @@ class ODEJumpFunc(ODEFunc):
         else:
             raise Exception('evnt_type must either be discrete or continuous')
 
-        self.W = nn.Sequential(MLP(dim_z+dim_e, dim_z, dim_h, num_h, activation), nn.Tanh())
+        # saturate the jump with Tanh (or not)
+        self.W = MLP(dim_z+dim_e, dim_z, dim_h, num_h, activation)
 
         self.backtrace = []
 
