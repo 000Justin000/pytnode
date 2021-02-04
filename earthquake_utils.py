@@ -82,7 +82,7 @@ class EarthquakeGenerator:
             event_embeddings = np.dot(event_coords, self.ortho_axes(center_coord, rand_rot))
             event_times = self.ts[ids]
 
-            event_seq = [(t*scale, list(k)) for t, k in zip(event_times, event_embeddings) if t*scale < time_cutoff]
+            event_seq = [(t*scale, list(k.astype(np.float32))) for t, k in zip(event_times, event_embeddings) if t*scale < time_cutoff]
 
             event_seqs.append(sorted(event_seq))
  
