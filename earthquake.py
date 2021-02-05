@@ -138,7 +138,7 @@ if __name__ == '__main__':
     it0 = 0
 
 #   optimizer = optim.LBFGS(func.parameters(), max_iter=20)
-    optimizer = optim.Adam(func.parameters(), lr=1e-3, weight_decay=1e-5)
+    optimizer = optim.AdamW(func.parameters(), lr=1e-4, weight_decay=2.5e-4)
 
     if args.restart:
         checkpoint = torch.load(args.paramr)
