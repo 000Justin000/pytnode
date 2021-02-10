@@ -51,4 +51,4 @@ run_point_process_gaussian:
 	taskset --cpu-list 2 python point_processes_gaussian.py --datase exponential_hawkes --niter 3000 --jump_type read --batch_size 30 --nsave 100 --seed0 &
 
 run_earthquake:
-	taskset --cpu-list 4 python earthquake.py --niter 3000 --jump_type read --batch_size 8 --nsave 50 --seed0 &
+	taskset --cpu-list 4 python earthquake.py --niter 10000 --jump_type read --batch_size 8 --nsave 50 --seed0 &
